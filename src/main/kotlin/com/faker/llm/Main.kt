@@ -15,91 +15,38 @@ import com.faker.llm.routing.policies.PromptDirectivePolicy
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
+import io.ktor.server.netty.EngineMain
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.routing.routing
-import io.netty.channel.epoll.Epoll
-import io.netty.channel.epoll.EpollEventLoopGroup
-import io.netty.channel.epoll.EpollServerSocketChannel
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 
 /**
- * Faker LLM entrypoint.
+ * Faker LLM entrypoint. Standard Ktor pattern:
+ *  - `main(args)` delegates to [EngineMain.main] so configuration comes from `application.conf`
+ *  - the actual wiring lives in [Application.module], referenced from the config
  *
- * Раньше тут был `EngineMain.main(args)` + HOCON `application.conf`. Сейчас мы
- * руками поднимаем [embeddedServer], потому что нужно явно подменить Netty
- * transport на native epoll на Linux (под нагрузкой 3k+ RPS). На macOS / Windows
- * `Epoll.isAvailable()` вернёт false, и мы прозрачно фолбэкаемся на NIO —
- * dev-машины не ломаются.
- *
- * `src/main/resources/application.conf` после этого перехода становится мёртвым
- * конфигом — оставлен на месте намеренно, чтобы не ломать чужие ожидания и
- * чтобы было видно, что `responseWriteTimeoutSeconds` теперь выставляется
- * программно ниже (env `FAKER_RESPONSE_WRITE_TIMEOUT_SECONDS` поведение сохранено).
+ * Note on native epoll transport: `build.gradle.kts` подтягивает
+ * `netty-transport-native-epoll` для Linux (x86_64 + aarch64), но Ktor 3.5 `EngineMain`
+ * **сам по себе НЕ подхватывает** epoll — для этого нужен custom `embeddedServer` с
+ * `configureBootstrap { group(EpollEventLoopGroup()); channel(EpollServerSocketChannel::class.java) }`.
+ * Это нетривиальный рефакторинг (теряем `application.conf`-конфиг для
+ * `responseWriteTimeoutSeconds = 120`, который критичен для длинных SSE-стримов),
+ * поэтому пока запускаемся через NIO. Если после host-tuning'а понадобится ещё perf —
+ * отдельная задача с миграцией Main.kt на `embeddedServer`.
  */
-private val moduleLogger = LoggerFactory.getLogger("com.faker.llm.module")
-private val bootLogger = LoggerFactory.getLogger("com.faker.llm.boot")
-
-fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
-    val responseWriteTimeoutSeconds = System.getenv("FAKER_RESPONSE_WRITE_TIMEOUT_SECONDS")
-        ?.toIntOrNull()
-        ?: 120
-
-    val epollAvailable = Epoll.isAvailable()
-    if (epollAvailable) {
-        bootLogger.info("[netty] using native epoll transport (Linux)")
-    } else {
-        // Это нормально на macOS / Windows / non-x86_64-Linux без подходящего classifier'а.
-        // На проде (Ubuntu) ожидаем true; если тут всё равно false — что-то не так с classpath.
-        bootLogger.warn(
-            "[netty] native epoll unavailable, falling back to NIO. Reason: {}",
-            Epoll.unavailabilityCause()?.message ?: "n/a",
-        )
-    }
-
-    val server = embeddedServer(
-        Netty,
-        port = port,
-        host = "0.0.0.0",
-        module = Application::module,
-    ) {
-        this.responseWriteTimeoutSeconds = responseWriteTimeoutSeconds
-        // SSE-клиенты могут долго не слать ничего на сервер после initial request —
-        // явно ставим 0 (infinite) чтобы не плодить лишних reads timeouts.
-        this.requestReadTimeoutSeconds = 0
-        // TCP keep-alive чтобы вычищать застрявшие коннекты, которые клиент уже бросил
-        // без FIN (стандартная история под нагрузкой). Период — sysctl уровня ОС.
-        this.tcpKeepAlive = true
-
-        if (epollAvailable) {
-            configureBootstrap = {
-                group(EpollEventLoopGroup())
-                channel(EpollServerSocketChannel::class.java)
-            }
-        }
-    }
-
-    // Graceful shutdown: docker stop -> SIGTERM -> tini -> JVM shutdown hook -> server.stop().
-    // 1s grace для in-flight запросов, 10s полный timeout — дальше Netty форсит close.
-    Runtime.getRuntime().addShutdownHook(Thread {
-        bootLogger.info("[shutdown] SIGTERM received, stopping server (grace=1s, timeout=10s)")
-        server.stop(gracePeriodMillis = 1_000, timeoutMillis = 10_000)
-    })
-
-    bootLogger.info("[boot] Faker LLM listening on 0.0.0.0:{} (transport={})", port, if (epollAvailable) "epoll" else "nio")
-    server.start(wait = true)
-}
+fun main(args: Array<String>) = EngineMain.main(args)
 
 /**
  * Composition root. No DI framework on purpose — locals + constructor injection are enough
  * at this scale and have zero per-request overhead.
  */
+private val moduleLogger = LoggerFactory.getLogger("com.faker.llm.module")
+
+@Suppress("unused") // referenced from application.conf
 fun Application.module() {
     // FAKER_POOL_DIR env-override is used by the load test (Task 11) to swap in a clean
     // pool without rebuilding. Empty / unset → the default "pool" classpath directory.
