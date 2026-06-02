@@ -38,13 +38,11 @@ COPY --from=build --chown=faker:faker /workspace/faker-llm-all.jar /app/faker-ll
 
 USER faker
 
-# Env defaults — переопределяются через docker run -e / compose environment.
-# Дефолт без -Xms/-Xmx сюда положен для случая запуска без compose (тогда
-# MaxRAMPercentage=75 от лимита контейнера). Compose переопределяет на fixed 4g heap.
+# Env defaults — переопределяются через docker run -e / compose environment
 ENV PORT=8080 \
     FAKER_POOL_DIR=pool \
     LOG_DIR=/app/logs \
-    JAVA_OPTS="-XX:+UseZGC -XX:+AlwaysPreTouch -XX:MaxRAMPercentage=75 -Dio.netty.eventLoopThreads=32 -Dkotlinx.coroutines.scheduler.max.pool.size=512"
+    JAVA_OPTS="-XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:MaxRAMPercentage=75 -Dkotlinx.coroutines.scheduler.max.pool.size=256"
 
 EXPOSE 8080
 
