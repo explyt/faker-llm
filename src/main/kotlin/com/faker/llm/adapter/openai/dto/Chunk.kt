@@ -20,6 +20,13 @@ data class ChatCompletionChunk(
     val choices: List<ChunkChoice>,
     /** Wall-clock ms since the previous emitted frame; for the first frame this equals TTFT. */
     val faker_elapsed_ms: Long,
+    /**
+     * Final usage frame (faker-contract.md §1): after the chunk carrying `finish_reason`,
+     * the faker emits one more chunk with `choices = []` and a populated `usage`. Null on
+     * every intermediate frame — the `OpenAiJson` instance runs with `encodeDefaults = false`,
+     * so a null `usage` is omitted from the wire.
+     */
+    val usage: Usage? = null,
 )
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
@@ -35,8 +42,12 @@ data class ChunkDelta(
     val role: String? = null,
     val content: String? = null,
     val tool_calls: List<ToolCallDelta>? = null,
-    /** OpenAI `o1`-style reasoning stream channel. */
-    val reasoning: String? = null,
+    /**
+     * Reasoning / thinking stream channel. The faker-contract.md (example 2, `type=thinking`)
+     * mandates the field name `reasoning_content` — vendors that consume the response key
+     * off this exact spelling, not the older `reasoning` alias.
+     */
+    val reasoning_content: String? = null,
 )
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)

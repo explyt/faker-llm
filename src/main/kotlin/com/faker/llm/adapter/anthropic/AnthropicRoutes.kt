@@ -10,10 +10,12 @@ import com.faker.llm.app.fromElapsed
 import com.faker.llm.app.markRequestStart
 import com.faker.llm.app.requestStartedNanos
 import com.faker.llm.app.toHeaderValue
+import com.faker.llm.domain.FakerDirective
 import com.faker.llm.domain.HttpErrorEntry
 import com.faker.llm.domain.RequestContext
 import com.faker.llm.domain.SuccessEntry
 import com.faker.llm.domain.randomIn
+import com.faker.llm.engine.EntryOutputCap
 import com.faker.llm.engine.StreamingEngine
 import com.faker.llm.engine.SyntheticEntryBuilder
 import com.faker.llm.pool.PoolSelector
@@ -68,6 +70,7 @@ fun Route.anthropicRoutes(
 
         val ctx = AnthropicRequestMapper.toContext(request, directiveHeader)
         val decision = router.route(ctx)
+        val outputTokensLimit = parseOutputTokensLimit(directiveHeader)
 
         // SyntheticHttpError short-circuits the pool entirely — it's an injected error
         // from the client (X-Faker-Directive), not a randomly picked HttpErrorEntry.
@@ -84,13 +87,31 @@ fun Route.anthropicRoutes(
         val entry = selector.pick(ctx, decision)
         when (entry) {
             is HttpErrorEntry -> respondHttpError(call, mapper, json, requestId, entry)
-            is SuccessEntry -> if (ctx.stream) {
-                streamSuccess(call, mapper, engine, json, entry, ctx, request.model)
-            } else {
-                respondNonStreaming(call, mapper, engine, json, entry, ctx, request.model)
+            is SuccessEntry -> {
+                val capped = EntryOutputCap.applyOutputCap(entry, outputTokensLimit)
+                if (ctx.stream) {
+                    streamSuccess(call, mapper, engine, json, capped, ctx, request.model, outputTokensLimit)
+                } else {
+                    respondNonStreaming(call, mapper, engine, json, capped, ctx, request.model, outputTokensLimit)
+                }
             }
         }
     }
+}
+
+/**
+ * Parses `tokens.output` out of the raw `X-Faker-Directive` header value. Returns `null`
+ * when the header is absent, malformed, or doesn't carry a positive `tokens.output`.
+ */
+private val outputTokensDirectiveJson = kotlinx.serialization.json.Json {
+    ignoreUnknownKeys = true
+}
+
+private fun parseOutputTokensLimit(rawHeader: String?): Int? {
+    if (rawHeader.isNullOrBlank()) return null
+    return runCatching {
+        outputTokensDirectiveJson.decodeFromString<FakerDirective>(rawHeader).tokens?.output
+    }.getOrNull()?.takeIf { it > 0 }
 }
 
 private fun echoRequestId(call: ApplicationCall, headerName: String, requestId: String?) {
@@ -188,12 +209,14 @@ private suspend fun respondNonStreaming(
     entry: SuccessEntry,
     ctx: RequestContext,
     model: String,
+    outputTokensLimit: Int? = null,
 ) {
     val response = mapper.buildNonStreaming(
         events = engine.execute(entry, ctx),
         ctx = ctx,
         model = model,
         requestStartNanos = call.requestStartedNanos(),
+        outputTokensLimit = outputTokensLimit,
     )
     val elapsedMs = elapsedMsSince(call.requestStartedNanos())
     appendAppliedTiming(call, json, AppliedTiming(ttft_ms = entry.timing.ttftMs.max, itl_ms = 0L, total_ms = elapsedMs))
@@ -219,12 +242,14 @@ private suspend fun handleSynthetic(
         delay(Long.MAX_VALUE)
         return
     }
-    val entry = SyntheticEntryBuilder.buildEntry(decision.directive)
+    val rawEntry = SyntheticEntryBuilder.buildEntry(decision.directive)
+    val outputTokensLimit = decision.directive.tokens?.output?.takeIf { it > 0 }
+    val entry = EntryOutputCap.applyOutputCap(rawEntry, outputTokensLimit)
     val effectiveCtx = SyntheticEntryBuilder.overrideContext(ctx, decision.directive)
     if (effectiveCtx.stream) {
-        streamSuccess(call, mapper, engine, json, entry, effectiveCtx, model)
+        streamSuccess(call, mapper, engine, json, entry, effectiveCtx, model, outputTokensLimit)
     } else {
-        respondNonStreaming(call, mapper, engine, json, entry, effectiveCtx, model)
+        respondNonStreaming(call, mapper, engine, json, entry, effectiveCtx, model, outputTokensLimit)
     }
 }
 
@@ -236,6 +261,7 @@ private suspend fun streamSuccess(
     entry: SuccessEntry,
     ctx: RequestContext,
     model: String,
+    outputTokensLimit: Int? = null,
 ) {
     call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
     call.response.headers.append(HttpHeaders.Connection, "keep-alive")
@@ -244,7 +270,7 @@ private suspend fun streamSuccess(
     appendAppliedTiming(call, json, estimateForStreaming(entry))
     val startNanos = call.requestStartedNanos()
     call.respondTextWriter(contentType = ContentType.Text.EventStream) {
-        mapper.streamSse(engine.execute(entry, ctx), ctx, model, this, startNanos)
+        mapper.streamSse(engine.execute(entry, ctx), ctx, model, this, startNanos, outputTokensLimit)
     }
 }
 

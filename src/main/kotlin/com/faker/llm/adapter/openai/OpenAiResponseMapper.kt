@@ -46,6 +46,7 @@ class OpenAiResponseMapper(
         events: Flow<AbstractStreamEvent>,
         model: String,
         requestStartNanos: Long,
+        outputTokensLimit: Int? = null,
     ): ChatCompletionResponse {
         val collected = events.toList()
 
@@ -107,7 +108,7 @@ class OpenAiResponseMapper(
                     finish_reason = mapFinishReason(finishReason),
                 ),
             ),
-            usage = toUsage(usage),
+            usage = toUsage(usage, outputTokensLimit),
             faker_elapsed_ms = elapsedMsSince(requestStartNanos),
         )
     }
@@ -150,6 +151,7 @@ class OpenAiResponseMapper(
         model: String,
         writer: Writer,
         requestStartNanos: Long,
+        outputTokensLimit: Int? = null,
     ) {
         val id = newCompletionId()
         val created = nowEpochSec()
@@ -166,7 +168,7 @@ class OpenAiResponseMapper(
                     writer.writeDataFrame(chunk(id, created, model, ChunkDelta(content = event.delta), timer))
                 }
                 is AbstractStreamEvent.ThinkingChunk -> {
-                    writer.writeDataFrame(chunk(id, created, model, ChunkDelta(reasoning = event.delta), timer))
+                    writer.writeDataFrame(chunk(id, created, model, ChunkDelta(reasoning_content = event.delta), timer))
                 }
                 is AbstractStreamEvent.ToolCallStart -> {
                     val delta = ChunkDelta(
@@ -231,6 +233,20 @@ class OpenAiResponseMapper(
                     writer.write("data: ")
                     writer.write(json.encodeToString(ChatCompletionChunk.serializer(), finalChunk))
                     writer.write("\n\n")
+                    // faker-contract.md §1 (example 1): after `finish_reason` we emit a
+                    // standalone usage frame with `choices=[]` and the populated `usage`,
+                    // unconditional on the request's `stream_options.include_usage`.
+                    val usageChunk = ChatCompletionChunk(
+                        id = id,
+                        created = created,
+                        model = model,
+                        choices = emptyList(),
+                        faker_elapsed_ms = timer.nextElapsedMs(),
+                        usage = toUsage(event.usage, outputTokensLimit),
+                    )
+                    writer.write("data: ")
+                    writer.write(json.encodeToString(ChatCompletionChunk.serializer(), usageChunk))
+                    writer.write("\n\n")
                     writer.write("data: [DONE]\n\n")
                     writer.flush()
                 }
@@ -261,11 +277,22 @@ class OpenAiResponseMapper(
         flush()
     }
 
-    private fun toUsage(stub: UsageStub) = Usage(
-        prompt_tokens = stub.promptChars / 4,
-        completion_tokens = stub.completionChars / 4,
-        total_tokens = (stub.promptChars + stub.completionChars) / 4,
-    )
+    /**
+     * Maps the engine's [UsageStub] to the wire [Usage]. When [outputTokensLimit] is set
+     * (i.e. the client sent `tokens.output`), `completion_tokens` is FORCED to that exact
+     * value — the contract requires `usage.completion_tokens == tokens.output`, regardless
+     * of how much text the engine actually streamed (text may have been capped via
+     * `EntryOutputCap`, but the reported count must reflect the directive).
+     */
+    private fun toUsage(stub: UsageStub, outputTokensLimit: Int? = null): Usage {
+        val promptTokens = stub.promptChars / 4
+        val completionTokens = outputTokensLimit ?: (stub.completionChars / 4)
+        return Usage(
+            prompt_tokens = promptTokens,
+            completion_tokens = completionTokens,
+            total_tokens = promptTokens + completionTokens,
+        )
+    }
 
     private fun mapFinishReason(reason: FinishReason): String = when (reason) {
         FinishReason.Stop -> "stop"

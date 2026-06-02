@@ -28,6 +28,15 @@ import org.slf4j.event.Level
  * Faker LLM entrypoint. Standard Ktor pattern:
  *  - `main(args)` delegates to [EngineMain.main] so configuration comes from `application.conf`
  *  - the actual wiring lives in [Application.module], referenced from the config
+ *
+ * Note on native epoll transport: `build.gradle.kts` подтягивает
+ * `netty-transport-native-epoll` для Linux (x86_64 + aarch64), но Ktor 3.5 `EngineMain`
+ * **сам по себе НЕ подхватывает** epoll — для этого нужен custom `embeddedServer` с
+ * `configureBootstrap { group(EpollEventLoopGroup()); channel(EpollServerSocketChannel::class.java) }`.
+ * Это нетривиальный рефакторинг (теряем `application.conf`-конфиг для
+ * `responseWriteTimeoutSeconds = 120`, который критичен для длинных SSE-стримов),
+ * поэтому пока запускаемся через NIO. Если после host-tuning'а понадобится ещё perf —
+ * отдельная задача с миграцией Main.kt на `embeddedServer`.
  */
 fun main(args: Array<String>) = EngineMain.main(args)
 

@@ -25,7 +25,7 @@ object SyntheticEntryBuilder {
     private const val DEFAULT_CHUNK_MIN = 16
     private const val DEFAULT_CHUNK_MAX = 32
     private const val DEFAULT_THINKING_MIN_TOKENS = 20
-    private const val THINKING_CHARS_PER_TOKEN = 4
+    private const val DEFAULT_OUTPUT_TOKENS = 50
     private const val DEFAULT_TOOL_NAME = "fake_tool"
     private val DEFAULT_TOOL_ARG_KEYS = listOf("arg")
 
@@ -44,27 +44,25 @@ object SyntheticEntryBuilder {
             timing = defaultTiming,
         )
 
-        "slow" -> SuccessEntry(
-            id = "synthetic-slow",
-            weight = 1.0,
-            parts = listOf(ResponsePart.Text("This is a slow response from the faker.")),
-            timing = timingFromDirective(directive),
-        )
+        "slow" -> {
+            val outputTokens = directive.tokens?.output?.takeIf { it > 0 } ?: DEFAULT_OUTPUT_TOKENS
+            SuccessEntry(
+                id = "synthetic-slow",
+                weight = 1.0,
+                parts = listOf(ResponsePart.Text(buildWordContent(outputTokens * CHARS_PER_TOKEN))),
+                timing = timingFromDirective(directive),
+            )
+        }
 
         "thinking" -> {
             val minTokens = directive.thinking?.min_tokens ?: DEFAULT_THINKING_MIN_TOKENS
-            val target = minTokens * THINKING_CHARS_PER_TOKEN
-            val content = buildString {
-                var step = 1
-                while (length < target) {
-                    append("Step ").append(step).append(": thinking about this carefully. ")
-                    step++
-                }
-            }
+            val thinkingContent = buildThinkingContent(minTokens * CHARS_PER_TOKEN)
+            val outputTokens = directive.tokens?.output?.takeIf { it > 0 } ?: DEFAULT_OUTPUT_TOKENS
+            val textContent = buildWordContent(outputTokens * CHARS_PER_TOKEN)
             SuccessEntry(
                 id = "synthetic-thinking",
                 weight = 1.0,
-                parts = listOf(ResponsePart.Thinking(content), ResponsePart.Text("Done.")),
+                parts = listOf(ResponsePart.Thinking(thinkingContent), ResponsePart.Text(textContent)),
                 timing = defaultTiming,
             )
         }
@@ -105,5 +103,30 @@ object SyntheticEntryBuilder {
             interChunkMs = RangeMs(itl, itl),
             chunkSizeChars = RangeInt(DEFAULT_CHUNK_MIN, DEFAULT_CHUNK_MAX),
         )
+    }
+
+    /** Generate filler text of at least [targetLength] chars; we trim to exact size at the end. */
+    private fun buildWordContent(targetLength: Int): String {
+        if (targetLength <= 0) return ""
+        val raw = buildString(targetLength + 16) {
+            var step = 1
+            while (length < targetLength) {
+                append("word ").append(step).append(". ")
+                step++
+            }
+        }
+        return raw.take(targetLength)
+    }
+
+    private fun buildThinkingContent(targetLength: Int): String {
+        if (targetLength <= 0) return ""
+        val raw = buildString(targetLength + 32) {
+            var step = 1
+            while (length < targetLength) {
+                append("Step ").append(step).append(": thinking about this carefully. ")
+                step++
+            }
+        }
+        return raw
     }
 }

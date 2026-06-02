@@ -181,6 +181,42 @@ ktor {
 └── .veai/memory/                             — Memory bank (7 entries)
 ```
 
+## Production deployment (Ubuntu + Docker)
+
+Локальный baseline на macOS упирается в FD wall ядра на ~1190 RPS (см. `loadtest/faker-load-stage6.js` и memory `faker-llm-load-tuning`). На Linux + поднятые sysctl/ulimit ожидается 3k+ RPS на одной ноде.
+
+### Шаги для prod
+
+1. **Host setup** (только один раз на машине):
+   ```bash
+   sudo bash scripts/prod-host-setup.sh
+   ```
+   Скрипт раскатает sysctl (`fs.file-max=2M`, TCP buffers, `tcp_tw_reuse`), `limits.d` (nofile=1M), docker.service override. Идемпотентен. После — `re-login` или `reboot` чтобы /etc/security/limits.d применились к login-сессиям.
+
+2. **Build & start:**
+   ```bash
+   FAKER_POOL_DIR=pool-deepseek scripts/docker.sh build
+   FAKER_POOL_DIR=pool-deepseek scripts/docker.sh up
+   ```
+
+3. **Проверка что ulimit поднялся внутри контейнера** (должно быть 1048576):
+   ```bash
+   docker exec faker-llm sh -c 'ulimit -n'
+   ```
+
+4. **Smoke + load:**
+   ```bash
+   scripts/docker.sh smoke
+   # На той же или соседней машине:
+   k6 run loadtest/faker-load-stage3.js   # 1000 заказанных RPS на pool-deepseek
+   ```
+
+### Дополнительный tuning для максимума
+
+- **host networking** (убирает Docker NAT overhead, +5-15% на 3k+ RPS): в `docker-compose.yml` раскомментировать `network_mode: "host"`. Trade-off: теряется network isolation, ports map игнорируется, faker биндится прямо на :8080 хоста.
+- **native Netty epoll** (+20-40% throughput на high-concurrency SSE): сейчас НЕ включён — требует переключения с `EngineMain` на `embeddedServer` с custom `configureBootstrap`. Tracked отдельно; включать если после host-tuning'а ещё нужен boost.
+- **JVM**: дефолты в `docker-compose.yml` уже синхронны с проверенным под нагрузкой `scripts/run.sh` (ZGC + scheduler=512 + fixed 4g heap). Переопределяется через env `JAVA_OPTS`.
+
 ## Дальнейшие шаги
 
 Если упрётесь в производительность на дефолтном пуле — см. `.veai/memory/faker-llm-load-tuning.md`. Корневой совет: переключиться на `pool-short-only` или передизайнить тайминги в `pool/03-long-replies.json` / `pool/04-huge-reasoning.json` (там TTFT 200-3000ms + узкие чанки 2-8 символов формируют долгие стримы).
