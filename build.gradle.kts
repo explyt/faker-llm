@@ -2,6 +2,7 @@ val ktorVersion: String by project
 val serializationVersion: String by project
 val coroutinesVersion: String by project
 val logbackVersion: String by project
+val nettyVersion: String by project
 
 plugins {
     kotlin("jvm")
@@ -42,6 +43,14 @@ dependencies {
 
     // --- Logging ---
     implementation("ch.qos.logback:logback-classic:$logbackVersion")
+
+    // --- Native Netty transports (Linux only) ---
+    // На Linux Netty подменяет NIO на epoll → выше throughput на high-concurrency,
+    // снимает часть FD/poll overhead. На macOS/Windows эти артефакты просто игнорятся
+    // (Epoll.isAvailable() → false, и в Main.kt мы фоллбэкаемся на NIO).
+    // Обе архитектуры — на случай ARM-сервака; classifier-jar'ы тонкие.
+    implementation("io.netty:netty-transport-native-epoll:$nettyVersion:linux-x86_64")
+    implementation("io.netty:netty-transport-native-epoll:$nettyVersion:linux-aarch_64")
 
     // --- Test (no tests in MVP; wired for future use) ---
     testImplementation("io.ktor:ktor-server-test-host")

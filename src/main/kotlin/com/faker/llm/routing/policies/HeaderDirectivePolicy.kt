@@ -8,11 +8,15 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * Parses the `X-Faker-Directive` JSON header (see `faker-contract.md`) and turns the
- * `error` / `rate_limit` types into [RoutingDecision.SyntheticHttpError]. Other types
- * (`normal`, `thinking`, `tool_call`, `slow`, `timeout`, `empty`) are not implemented
- * yet — for those this policy returns `null` and the request falls through to the next
- * policy (`PromptDirectivePolicy`) and ultimately to normal weighted pool selection.
+ * Parses the `X-Faker-Directive` JSON header (see `faker-contract.md`) and routes each
+ * directive type into a [RoutingDecision]:
+ *  - `error` / `rate_limit` → [RoutingDecision.SyntheticHttpError]
+ *  - `slow` / `timeout` / `empty` / `thinking` / `tool_call` → [RoutingDecision.SyntheticBehavior]
+ *    (the route handler then drives `SyntheticEntryBuilder` and honors `tokens.output`)
+ *  - `normal` / unknown → `null` pass-through; the request continues through
+ *    `PromptDirectivePolicy` and finally weighted pool selection. `tokens.output` is still
+ *    honored in the pass-through case — the route handler parses it independently and
+ *    applies it via `EntryOutputCap` to the pool-picked entry.
  *
  * Tolerant on malformed JSON: parsing failure is logged at WARN and the policy returns
  * `null` so the request still goes through the normal pipeline. This keeps load-test

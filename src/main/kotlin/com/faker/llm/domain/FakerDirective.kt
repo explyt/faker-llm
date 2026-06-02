@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /**
  * Parsed shape of the `X-Faker-Directive` JSON header, as defined in `faker-contract.md`.
  *
- * Fields modeled here cover everything except `tokens` and `seed` (not implemented).
+ * Fields modeled here cover everything except `seed` (not implemented).
  * Unknown contract fields are silently ignored via `ignoreUnknownKeys = true` on the parser.
  *
  * Supported [type] values: `error`, `rate_limit`, `thinking`, `tool_call`, `slow`, `timeout`,
@@ -19,6 +19,7 @@ data class FakerDirective(
     val thinking: FakerDirectiveThinking? = null,
     val tool_call: FakerDirectiveToolCall? = null,
     val timing: FakerDirectiveTiming? = null,
+    val tokens: FakerDirectiveTokens? = null,
 )
 
 /**
@@ -57,4 +58,16 @@ data class FakerDirectiveTiming(
     val ttft_ms: Long? = null,
     val itl_ms: Long? = null,
     val total_ms: Long? = null,
+)
+
+/**
+ * `tokens` sub-object: caps the output length of the response.
+ *
+ * Faker treats `output` as the number of output tokens to produce. At wire-time the limit
+ * is converted to characters via the 4-chars-per-token convention used everywhere else
+ * (see `OpenAiResponseMapper.toUsage`, `SyntheticEntryBuilder`).
+ */
+@Serializable
+data class FakerDirectiveTokens(
+    val output: Int? = null,
 )
