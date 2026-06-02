@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "http_error",
+    "id": "http-429-rate-limit-01",
+    "weight": 1.0,
+    "tag": "http_error",
+    "status": 429,
+    "errorBody": { "type": "rate_limit_error", "message": "Rate limit reached for requests" },
+    "preResponseDelayMs": { "min": 0, "max": 100 }
+  },
+  {
+    "kind": "http_error",
+    "id": "http-500-api-error-01",
+    "weight": 1.0,
+    "tag": "http_error",
+    "status": 500,
+    "errorBody": { "type": "api_error", "message": "The server encountered an error" },
+    "preResponseDelayMs": { "min": 0, "max": 100 }
+  },
+  {
+    "kind": "http_error",
+    "id": "http-503-overloaded-01",
+    "weight": 1.0,
+    "tag": "http_error",
+    "status": 503,
+    "errorBody": { "type": "overloaded_error", "message": "Service temporarily unavailable" },
+    "preResponseDelayMs": { "min": 200, "max": 1000 }
+  },
+  {
+    "kind": "http_error",
+    "id": "http-529-overloaded-01",
+    "weight": 1.0,
+    "tag": "http_error",
+    "status": 529,
+    "errorBody": { "type": "overloaded_error", "message": "Overloaded" },
+    "preResponseDelayMs": { "min": 200, "max": 1000 }
+  },
+  {
+    "kind": "http_error",
+    "id": "http-504-timeout-01",
+    "weight": 1.0,
+    "tag": "http_error",
+    "status": 504,
+    "errorBody": { "type": "timeout", "message": "Request timed out" },
+    "preResponseDelayMs": { "min": 5000, "max": 15000 }
+  }
+]

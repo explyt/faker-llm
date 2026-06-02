@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+        LOG_DIR override hook: defaults to "logs/" relative to working dir.
+        Override via JVM flag (-DLOG_DIR=...) or env var (LOG_DIR=...).
+        File appender writes to ${LOG_DIR}/faker-llm.log with size+time rotation.
+    -->
+    <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+
+    <!--
+        Plain pattern: file. Always-on regardless of terminal capabilities.
+        ANSI sequences from Ktor's CallLogging are killed at the source via
+        `disableDefaultColors()` in Application.module() — we don't strip them here
+        because XML 1.0 forbids the U+001B character reference (`&#x1b;`) anywhere
+        in the document, even inside CDATA.
+    -->
+    <property name="PATTERN_PLAIN"
+              value="%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
+
+    <!-- Highlighted pattern: console. Logback's %highlight() renders ANSI colors
+         per level. Safe on dumb terminals (it just emits no escapes). -->
+    <property name="PATTERN_COLOR"
+              value="%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %logger{36} - %msg%n"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${PATTERN_COLOR}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/faker-llm.log</file>
+        <encoder>
+            <pattern>${PATTERN_PLAIN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/faker-llm-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

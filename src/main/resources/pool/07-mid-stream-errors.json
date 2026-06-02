@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "success",
+    "id": "mid-abrupt-disconnect-01",
+    "weight": 2.0,
+    "tag": "mid_stream_error",
+    "parts": [
+      { "type": "text", "content": "Sure, let me start explaining the process in detail so you can follow along step by step and then" }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "midStreamError": { "afterChunks": 5, "kind": "AbruptDisconnect" }
+  },
+  {
+    "kind": "success",
+    "id": "mid-error-event-02",
+    "weight": 2.0,
+    "tag": "mid_stream_error",
+    "parts": [
+      { "type": "text", "content": "I can help with that. Here is the first part of the answer, and there is quite a bit more detail coming right after this initial section that explains" }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "midStreamError": { "afterChunks": 10, "kind": "ErrorEvent" }
+  },
+  {
+    "kind": "success",
+    "id": "mid-malformed-json-03",
+    "weight": 1.0,
+    "tag": "mid_stream_error",
+    "parts": [
+      { "type": "text", "content": "Let me look into that for you right away and" }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "midStreamError": { "afterChunks": 3, "kind": "MalformedJson" }
+  }
+]

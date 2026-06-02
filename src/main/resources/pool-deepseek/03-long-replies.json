@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "success",
+    "id": "ds-long-architecture-01",
+    "weight": 7.0,
+    "tag": "long",
+    "parts": [
+      { "type": "text", "content": "Let's walk through the architecture in detail.\n\nAt the edge you have an adapter layer whose only job is to translate the provider-specific wire format into a normalized internal representation. This keeps the core completely agnostic about which API shape it is serving.\n\nThe core itself is split into selection and execution. Selection takes the normalized request plus an optional routing decision and picks one entry from a weighted pool. Execution then plays that entry back as a stream of abstract events, with realistic timing applied between chunks.\n\nFinally, the adapter maps those abstract events back into the provider's streaming format. Because the boundaries are explicit, adding a new provider is just a new adapter — the core never changes." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-long-tradeoffs-02",
+    "weight": 7.0,
+    "tag": "long",
+    "parts": [
+      { "type": "text", "content": "There are a few trade-offs worth calling out explicitly.\n\nThe first is consistency versus availability. If you favor strong consistency, every write has to coordinate, which adds latency and reduces availability during partitions. If you favor availability, you accept that some reads may be stale and you reconcile later.\n\nThe second is simplicity versus flexibility. A rigid schema is easy to reason about and validate, but it resists change. A flexible schema absorbs change gracefully but pushes validation into application code.\n\nThe third is cost versus performance. Caching aggressively improves latency but increases memory pressure and the risk of serving stale data. The right answer is almost always workload-specific, so measure before you optimize." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-long-russian-03",
+    "weight": 6.0,
+    "tag": "long",
+    "parts": [
+      { "type": "text", "content": "Разберём вопрос обстоятельно, по слоям.\n\nНа входе стоит слой адаптеров. Его единственная задача — превратить специфичный для провайдера формат в нормализованное внутреннее представление. Благодаря этому ядро не знает и не должно знать, какой именно API оно обслуживает.\n\nСамо ядро делится на выбор и исполнение. Выбор берёт нормализованный запрос и решение маршрутизации, после чего достаёт одну запись из взвешенного пула. Исполнение проигрывает эту запись как поток абстрактных событий с реалистичными задержками между чанками.\n\nВ конце адаптер снова собирает из абстрактных событий потоковый формат конкретного провайдера. Границы заданы явно, поэтому добавление нового провайдера — это просто новый адаптер, а ядро остаётся нетронутым." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "success",
+    "id": "medium-explain-01",
+    "weight": 8.0,
+    "tag": "medium",
+    "parts": [
+      { "type": "text", "content": "Great question. The short answer is that it depends on how the data flows through your system. If the requests are independent, you can process them in parallel and scale horizontally. If they share state, you'll want a queue in front so that ordering and back-pressure are handled cleanly." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "medium-steps-02",
+    "weight": 8.0,
+    "tag": "medium",
+    "parts": [
+      { "type": "text", "content": "Here is a practical approach. First, reproduce the issue locally with a minimal example. Second, add logging around the suspected boundary so you can see the actual inputs. Third, write a small test that captures the failing case. Once that test is green, you can refactor with confidence." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "medium-russian-03",
+    "weight": 9.0,
+    "tag": "medium",
+    "parts": [
+      { "type": "text", "content": "Давайте разложим по шагам. Сначала фиксируем, что именно считается корректным результатом — без этого любая правка вслепую. Затем проверяем входные данные на границе модуля: чаще всего проблема не в логике, а в неожиданном null или пустом списке. После этого правка становится точечной и предсказуемой." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 200, "max": 1500 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  }
+]

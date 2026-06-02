@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "success",
+    "id": "ds-reasoning-math-01",
+    "weight": 2.0,
+    "tag": "reasoning",
+    "parts": [
+      { "type": "thinking", "content": "Let me think step by step. The user is asking for the result, so I should not jump straight to an answer. First, I restate the problem in my own words to make sure I understand it. Then, I identify the constraints and any edge cases that might trip me up. Next, I sketch a candidate approach and sanity-check it against a small example. After that, I verify the example by hand to confirm the logic holds. If the example checks out, I generalize the approach. Finally, I double-check the units and the boundary conditions before committing to a final answer." },
+      { "type": "text", "content": "After working through it carefully, the answer is 42." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-reasoning-design-02",
+    "weight": 2.0,
+    "tag": "reasoning",
+    "parts": [
+      { "type": "thinking", "content": "Let me reason this through before answering. The question is really about a design choice, so the trade-offs matter more than any single 'correct' option. First, I list the forces in play: latency, complexity, and failure modes. Then, I consider what happens under load, because a design that is elegant at one request per second can collapse at a thousand. I imagine the worst case: a downstream dependency stalls and back-pressure builds up. A good design degrades gracefully here rather than falling over. With that lens, the streaming-with-timeouts approach clearly wins over the buffer-everything approach." },
+      { "type": "text", "content": "Go with bounded streaming plus per-chunk timeouts — it degrades gracefully under load." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-reasoning-russian-03",
+    "weight": 1.0,
+    "tag": "reasoning",
+    "parts": [
+      { "type": "thinking", "content": "Подумаю по шагам, прежде чем отвечать. Сначала переформулирую задачу: нужно понять, в чём корневая причина, а не симптом. Затем перебираю гипотезы от самой дешёвой к самой дорогой в проверке. Первая гипотеза — данные на входе не те, что я ожидаю. Вторая — порядок выполнения нарушен из-за конкурентности. Третья — внешняя зависимость отвечает медленно. Мысленно прогоняю каждую на маленьком примере и отбрасываю те, что противоречат фактам. Остаётся одна правдоподобная — её и проверю первой в коде." },
+      { "type": "text", "content": "Скорее всего дело в гонке на общем состоянии — начни с неё." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  }
+]

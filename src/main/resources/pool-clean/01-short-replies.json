@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "success",
+    "id": "short-greeting-01",
+    "weight": 8.0,
+    "tag": "short",
+    "parts": [
+      { "type": "text", "content": "Hello! How can I help you today?" }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "short-ack-02",
+    "weight": 8.0,
+    "tag": "short",
+    "parts": [
+      { "type": "text", "content": "Got it — I've noted that down and I'm ready for the next step." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "short-russian-03",
+    "weight": 9.0,
+    "tag": "short",
+    "parts": [
+      { "type": "text", "content": "Привет! Чем могу помочь? Опишите задачу — и разберёмся." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    }
+  }
+]

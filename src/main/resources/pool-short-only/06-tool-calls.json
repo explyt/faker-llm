@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "success",
+    "id": "tool-empty-args-01",
+    "weight": 4.0,
+    "requiresTools": true,
+    "tag": "tool_call",
+    "parts": [
+      { "type": "tool_call", "argsTemplate": {} }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "finishReason": "ToolCalls"
+  },
+  {
+    "kind": "success",
+    "id": "tool-single-field-02",
+    "weight": 3.0,
+    "requiresTools": true,
+    "tag": "tool_call",
+    "parts": [
+      { "type": "tool_call", "argsTemplate": { "query": "weather in San Francisco" } }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "finishReason": "ToolCalls"
+  },
+  {
+    "kind": "success",
+    "id": "tool-three-fields-03",
+    "weight": 3.0,
+    "requiresTools": true,
+    "tag": "tool_call",
+    "parts": [
+      { "type": "tool_call", "argsTemplate": { "city": "Berlin", "units": "celsius", "days": 3 } }
+    ],
+    "timing": {
+      "ttftMs": { "min": 100, "max": 800 },
+      "interChunkMs": { "min": 10, "max": 50 },
+      "chunkSizeChars": { "min": 2, "max": 8 }
+    },
+    "finishReason": "ToolCalls"
+  }
+]

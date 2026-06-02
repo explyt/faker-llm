@@ -1,0 +1,39 @@
+services:
+  faker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: faker-llm:0.1.0
+    container_name: faker-llm
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Какой pool оверлей подхватывать (см. src/main/resources/pool*/)
+      FAKER_POOL_DIR: "${FAKER_POOL_DIR:-pool}"
+      # Логи всегда в /app/logs внутри контейнера; volume ниже маппит на хост
+      LOG_DIR: "/app/logs"
+      # JVM tuning. По дефолту масштабируется от лимита контейнера через MaxRAMPercentage=75.
+      # Если хочешь жёсткий -Xmx — переопредели через .env: JAVA_OPTS=-Xmx2g ...
+      JAVA_OPTS: "${JAVA_OPTS:--XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:MaxRAMPercentage=75 -Dkotlinx.coroutines.scheduler.max.pool.size=256}"
+    volumes:
+      - faker-logs:/app/logs
+    ulimits:
+      # Под высокую нагрузку 1000+ RPS нужен большой FD limit
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          # При 2g дефолтном heap отдаём 3g контейнеру (overhead на metaspace, threads, direct buffers)
+          memory: 3g
+
+volumes:
+  faker-logs:

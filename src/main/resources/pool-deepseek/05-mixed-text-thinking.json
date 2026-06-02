@@ -1,0 +1,53 @@
+[
+  {
+    "kind": "success",
+    "id": "ds-mixed-debug-01",
+    "weight": 2.0,
+    "tag": "mixed",
+    "parts": [
+      { "type": "thinking", "content": "The user reports a NullPointerException. Let me locate where the value could be null." },
+      { "type": "text", "content": "It looks like the dependency isn't initialized before first use. " },
+      { "type": "thinking", "content": "Now I should suggest the smallest fix that addresses the root cause, not the symptom." },
+      { "type": "text", "content": "Inject it in the constructor and make the field non-null — that removes the failure mode entirely." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-mixed-plan-02",
+    "weight": 2.0,
+    "tag": "mixed",
+    "parts": [
+      { "type": "thinking", "content": "There are two sub-tasks here. I'll address them in order of dependency." },
+      { "type": "text", "content": "Let's start with the schema, since everything else builds on it. " },
+      { "type": "thinking", "content": "Once the schema is stable, the API surface follows naturally." },
+      { "type": "text", "content": "Then we expose a thin API over it and wire up validation at the boundary." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  },
+  {
+    "kind": "success",
+    "id": "ds-mixed-russian-03",
+    "weight": 1.0,
+    "tag": "mixed",
+    "parts": [
+      { "type": "thinking", "content": "Сначала пойму, что хочет пользователь на самом деле, а не дословно." },
+      { "type": "text", "content": "Если коротко — да, такой подход рабочий. " },
+      { "type": "thinking", "content": "Но есть нюанс с производительностью под нагрузкой, о нём стоит предупредить." },
+      { "type": "text", "content": "Только учти, что на больших объёмах понадобится кэш, иначе упрёшься в БД." }
+    ],
+    "timing": {
+      "ttftMs": { "min": 1210, "max": 1310 },
+      "interChunkMs": { "min": 15, "max": 35 },
+      "chunkSizeChars": { "min": 16, "max": 32 }
+    }
+  }
+]

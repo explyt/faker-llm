@@ -1,0 +1,27 @@
+# Не тащим в build context лишнее — ускоряет docker build и уменьшает кеш-инвалидацию
+.git
+.gitignore
+.idea
+.kotlin
+.gradle
+.veai
+.tasks
+build/
+out/
+logs/
+.run/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+
+# Документация и нагрузочные тесты не нужны для билда образа
+docs/
+loadtest/
+README.md
+
+# Локальные скрипты в build-контекст не нужны
+scripts/
+Dockerfile
+.dockerignore
+docker-compose.yml
