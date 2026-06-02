@@ -8,41 +8,21 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-8080}:8080"
-    # Для максимального сетевого throughput раскомментируй network_mode и закомментируй ports.
-    # Trade-off: теряем Docker network isolation, контейнер биндится прямо на :8080 хоста.
-    # Подходит для prod на dedicated faker-машине.
-    # network_mode: "host"
     environment:
-      # Какой pool overlay подхватывать (см. src/main/resources/pool*/)
-      FAKER_POOL_DIR: "${FAKER_POOL_DIR:-pool-deepseek}"
+      # Какой pool оверлей подхватывать (см. src/main/resources/pool*/)
+      FAKER_POOL_DIR: "${FAKER_POOL_DIR:-pool}"
       # Логи всегда в /app/logs внутри контейнера; volume ниже маппит на хост
       LOG_DIR: "/app/logs"
-      # JVM tuning. Sync с scripts/run.sh (ZGC + 512 scheduler + fixed heap).
-      # Зафиксированный -Xms == -Xmx (4g) убирает heap resize паузы под нагрузкой.
-      # ZGC даёт sub-ms GC паузы (vs ~100ms у G1) — критично для p95 на high-RPS SSE.
-      # Подробное обоснование: memory bank `faker-llm-load-tuning`.
-      JAVA_OPTS: "${JAVA_OPTS:--Xms4g -Xmx4g -XX:+UseZGC -XX:+AlwaysPreTouch -XX:MaxDirectMemorySize=2g -Dio.netty.eventLoopThreads=32 -Dkotlinx.coroutines.scheduler.max.pool.size=512 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs/faker-oom.hprof}"
+      # JVM tuning. По дефолту масштабируется от лимита контейнера через MaxRAMPercentage=75.
+      # Если хочешь жёсткий -Xmx — переопредели через .env: JAVA_OPTS=-Xmx2g ...
+      JAVA_OPTS: "${JAVA_OPTS:--XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:MaxRAMPercentage=75 -Dkotlinx.coroutines.scheduler.max.pool.size=256}"
     volumes:
       - faker-logs:/app/logs
     ulimits:
-      # Под 3k+ RPS на deepseek pool нужен 1M FD (stage6 на macOS уперлось в FD wall
-      # на ~25k одновременных streaming connections при 65k limit).
-      # На хосте также нужен sudo bash scripts/prod-host-setup.sh — иначе docker daemon
-      # сам обрежет limit на ~1k и эта секция не сработает.
+      # Под высокую нагрузку 1000+ RPS нужен большой FD limit
       nofile:
-        soft: 1048576
-        hard: 1048576
-      nproc:
-        soft: 65535
-        hard: 65535
-    sysctls:
-      # Эти sysctls работают в container network namespace.
-      # Полный набор (включая fs.file-max, net.core.rmem_max) выставляется на хосте
-      # через scripts/prod-host-setup.sh.
-      net.core.somaxconn: 65535
-      net.ipv4.tcp_tw_reuse: 1
-      net.ipv4.tcp_fin_timeout: 15
-      net.ipv4.ip_local_port_range: "1024 65535"
+        soft: 65536
+        hard: 65536
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -52,8 +32,8 @@ services:
     deploy:
       resources:
         limits:
-          # 4g heap + direct buffers (2g) + metaspace + threads + native overhead → 6g контейнеру
-          memory: 6g
+          # При 2g дефолтном heap отдаём 3g контейнеру (overhead на metaspace, threads, direct buffers)
+          memory: 3g
 
 volumes:
   faker-logs:
