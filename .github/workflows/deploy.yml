@@ -1,0 +1,54 @@
+name: Deploy to server
+
+# Ручной запуск из UI GitHub: Actions → Deploy to server → Run workflow.
+# На сервере: git fetch + reset на origin/main, затем docker.sh build + up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      faker_pool_dir:
+        description: "Pool overlay (FAKER_POOL_DIR), напр. pool, pool-deepseek"
+        required: false
+        default: "pool"
+        type: string
+      port:
+        description: "Публикуемый порт (PORT)"
+        required: false
+        default: "8080"
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REPO_PATH: ${{ secrets.REPO_PATH }}
+          FAKER_POOL_DIR: ${{ inputs.faker_pool_dir }}
+          PORT: ${{ inputs.port }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          # Прокидываем env-переменные раннера внутрь ssh-сессии
+          envs: FAKER_POOL_DIR,PORT,REPO_PATH
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "$REPO_PATH"
+
+            echo "[deploy] pulling main from origin..."
+            git fetch --all --prune
+            git checkout main
+            git reset --hard origin/main
+
+            echo "[deploy] FAKER_POOL_DIR=$FAKER_POOL_DIR PORT=$PORT"
+            export FAKER_POOL_DIR PORT
+
+            ./scripts/docker.sh build
+            ./scripts/docker.sh up
+            ./scripts/docker.sh ps
+            ./scripts/docker.sh smoke
