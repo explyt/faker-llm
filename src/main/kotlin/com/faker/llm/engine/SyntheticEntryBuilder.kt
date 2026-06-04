@@ -7,80 +7,88 @@ import com.faker.llm.domain.RequestContext
 import com.faker.llm.domain.ResponsePart
 import com.faker.llm.domain.SuccessEntry
 import com.faker.llm.domain.TimingProfile
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Synthesizes a [SuccessEntry] from a [FakerDirective] for directive types that don't pick
- * from the pool: `slow`, `empty`, `thinking`, `tool_call`. Adapter route handlers feed the
- * resulting entry into the normal streaming/non-streaming code path.
+ * from the pool: `normal`, `empty`, `thinking`, `tool_call`. Adapter route handlers feed
+ * the resulting entry into the normal streaming/non-streaming code path.
  *
  * `timeout` is NOT handled here — the route handler suspends with `delay(Long.MAX_VALUE)`
  * before any engine call.
+ *
+ * ### Length model (faker-contract 2.md §4)
+ * For `normal` / `thinking` the stream length is derived from timing:
+ * ```
+ *   content_tokens = round((total_ms − ttft_ms) / itl_ms) + 1
+ * ```
+ * The formula collapses to a single token when `total_ms ≤ ttft_ms` or `itl_ms ≤ 0`,
+ * matching the contract's "at least one content token" floor. `thinking` splits the
+ * budget into a reasoning prefix (≥ `thinking.min_tokens`) and the remaining content.
+ *
+ * `tool_call` is exactly one tool-call event (no args). `empty` produces no content
+ * parts at all (only `ttft_ms` matters).
  */
 object SyntheticEntryBuilder {
 
+    /** Characters-per-token convention shared with the wire `Usage` mapping in adapters. */
+    private const val CHARS_PER_TOKEN = 4
+
     private const val DEFAULT_TTFT_MS = 300L
     private const val DEFAULT_ITL_MS = 20L
+    private const val DEFAULT_TOTAL_MS = 2000L
     private const val DEFAULT_CHUNK_MIN = 16
     private const val DEFAULT_CHUNK_MAX = 32
     private const val DEFAULT_THINKING_MIN_TOKENS = 20
-    private const val DEFAULT_OUTPUT_TOKENS = 50
     private const val DEFAULT_TOOL_NAME = "fake_tool"
-    private val DEFAULT_TOOL_ARG_KEYS = listOf("arg")
 
-    private val defaultTiming = TimingProfile(
-        ttftMs = RangeMs(DEFAULT_TTFT_MS, DEFAULT_TTFT_MS),
-        interChunkMs = RangeMs(DEFAULT_ITL_MS, DEFAULT_ITL_MS),
-        chunkSizeChars = RangeInt(DEFAULT_CHUNK_MIN, DEFAULT_CHUNK_MAX),
-    )
-
-    /** Build a synthesized success entry for `slow` / `empty` / `thinking` / `tool_call` types. */
+    /** Build a synthesized success entry for `normal` / `empty` / `thinking` / `tool_call`. */
     fun buildEntry(directive: FakerDirective): SuccessEntry = when (directive.type) {
         "empty" -> SuccessEntry(
             id = "synthetic-empty",
             weight = 1.0,
             parts = emptyList(),
-            timing = defaultTiming,
+            timing = timingFromDirective(directive),
         )
 
-        "slow" -> {
-            val outputTokens = directive.tokens?.output?.takeIf { it > 0 } ?: DEFAULT_OUTPUT_TOKENS
+        "normal" -> {
+            val tokens = contentTokensFromTiming(directive)
             SuccessEntry(
-                id = "synthetic-slow",
+                id = "synthetic-normal",
                 weight = 1.0,
-                parts = listOf(ResponsePart.Text(buildWordContent(outputTokens * CHARS_PER_TOKEN))),
+                parts = listOf(ResponsePart.Text(buildWordContent(tokens * CHARS_PER_TOKEN))),
                 timing = timingFromDirective(directive),
             )
         }
 
         "thinking" -> {
-            val minTokens = directive.thinking?.min_tokens ?: DEFAULT_THINKING_MIN_TOKENS
-            val thinkingContent = buildThinkingContent(minTokens * CHARS_PER_TOKEN)
-            val outputTokens = directive.tokens?.output?.takeIf { it > 0 } ?: DEFAULT_OUTPUT_TOKENS
-            val textContent = buildWordContent(outputTokens * CHARS_PER_TOKEN)
+            val totalTokens = contentTokensFromTiming(directive)
+            val minThinkingTokens = directive.thinking?.min_tokens?.takeIf { it > 0 }
+                ?: DEFAULT_THINKING_MIN_TOKENS
+            // Contract: total tokens are split between reasoning prefix and content.
+            // Always emit at least one content token after the reasoning block.
+            val thinkingTokens = minOf(minThinkingTokens, maxOf(totalTokens - 1, 1))
+            val contentTokens = maxOf(totalTokens - thinkingTokens, 1)
             SuccessEntry(
                 id = "synthetic-thinking",
                 weight = 1.0,
-                parts = listOf(ResponsePart.Thinking(thinkingContent), ResponsePart.Text(textContent)),
-                timing = defaultTiming,
+                parts = listOf(
+                    ResponsePart.Thinking(buildThinkingContent(thinkingTokens * CHARS_PER_TOKEN)),
+                    ResponsePart.Text(buildWordContent(contentTokens * CHARS_PER_TOKEN)),
+                ),
+                timing = timingFromDirective(directive),
             )
         }
 
-        "tool_call" -> {
-            val argsKeys = directive.tool_call?.args_keys?.takeIf { it.isNotEmpty() }
-                ?: DEFAULT_TOOL_ARG_KEYS
-            val argsTemplate = buildJsonObject {
-                for (key in argsKeys) put(key, JsonPrimitive("placeholder_$key"))
-            }
-            SuccessEntry(
-                id = "synthetic-tool-call",
-                weight = 1.0,
-                requiresTools = true,
-                parts = listOf(ResponsePart.ToolCall(argsTemplate)),
-                timing = defaultTiming,
-            )
-        }
+        "tool_call" -> SuccessEntry(
+            id = "synthetic-tool-call",
+            weight = 1.0,
+            requiresTools = true,
+            // Contract §5: tool_call is "one tool-call invocation" — no arguments to stream,
+            // so the args template is an empty JSON object that yields zero arg chunks.
+            parts = listOf(ResponsePart.ToolCall(JsonObject(emptyMap()))),
+            timing = timingFromDirective(directive),
+        )
 
         else -> error("SyntheticEntryBuilder.buildEntry called with unsupported type: ${directive.type}")
     }
@@ -95,6 +103,22 @@ object SyntheticEntryBuilder {
         return ctx.copy(hasTools = true, toolNames = listOf(name))
     }
 
+    /**
+     * Implements faker-contract 2.md §4: `round((total_ms − ttft_ms) / itl_ms) + 1`,
+     * clamped to a minimum of 1 (the contract floor — at least one content token).
+     * `includeTotal=false` callers (`empty`, `tool_call`) should not invoke this.
+     */
+    private fun contentTokensFromTiming(directive: FakerDirective): Int {
+        val ttft = directive.timing?.ttft_ms ?: DEFAULT_TTFT_MS
+        val itl = (directive.timing?.itl_ms ?: DEFAULT_ITL_MS).takeIf { it > 0 } ?: DEFAULT_ITL_MS
+        val total = directive.timing?.total_ms ?: DEFAULT_TOTAL_MS
+        val deltaMs = total - ttft
+        if (deltaMs <= 0) return 1
+        // Math.round implements the contract's "round" — half-up at .5 boundaries.
+        return Math.round(deltaMs.toDouble() / itl.toDouble()).toInt() + 1
+    }
+
+    /** Builds a [TimingProfile] from the directive (defaults filled in for absent fields). */
     private fun timingFromDirective(directive: FakerDirective): TimingProfile {
         val ttft = directive.timing?.ttft_ms ?: DEFAULT_TTFT_MS
         val itl = directive.timing?.itl_ms ?: DEFAULT_ITL_MS
@@ -127,6 +151,6 @@ object SyntheticEntryBuilder {
                 step++
             }
         }
-        return raw
+        return raw.take(targetLength)
     }
 }

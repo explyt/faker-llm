@@ -22,26 +22,22 @@ sealed interface RoutingDecision {
     data class ForceHttpStatus(val status: Int) : RoutingDecision
 
     /**
-     * Short-circuits the pipeline: route handlers must respond with an HTTP error built
-     * from these fields WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by
+     * Short-circuits the pipeline: route handlers must respond with an HTTP error built from
+     * [status] WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by
      * `HeaderDirectivePolicy` from the `X-Faker-Directive` header.
      *
+     * Per v2 of the contract the directive only carries `error.http_status` — the
+     * `error.code`/`error.message` / Anthropic `error.type` text is chosen by the faker
+     * itself (route handlers look it up by status).
+     *
      * @param status raw HTTP status code (e.g. 429, 500, 503)
-     * @param code optional provider-agnostic error code (e.g. `rate_limit_exceeded`).
-     *   For OpenAI flows it maps to `error.code`; for Anthropic flows it becomes
-     *   the `error.type` (Anthropic has no separate code field).
-     * @param message human-readable error message echoed verbatim in the response body
      */
-    data class SyntheticHttpError(
-        val status: Int,
-        val code: String?,
-        val message: String,
-    ) : RoutingDecision
+    data class SyntheticHttpError(val status: Int) : RoutingDecision
 
     /**
      * Short-circuits the pool: route handlers must SYNTHESIZE the response from [directive]
      * WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by `HeaderDirectivePolicy`
-     * for `thinking` / `tool_call` / `slow` / `timeout` / `empty` directive types.
+     * for `normal` / `thinking` / `tool_call` / `timeout` / `empty` directive types.
      *
      * The actual response shape is built by `SyntheticEntryBuilder` in the engine package.
      * Selector must NOT see this decision — reaching the selector with it is a wiring bug

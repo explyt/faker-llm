@@ -3,14 +3,17 @@ package com.faker.llm.domain
 import kotlinx.serialization.Serializable
 
 /**
- * Parsed shape of the `X-Faker-Directive` JSON header, as defined in `faker-contract.md`.
+ * Parsed shape of the `X-Faker-Directive` JSON header, as defined in `faker-contract 2.md`.
  *
- * Fields modeled here cover everything except `seed` (not implemented).
- * Unknown contract fields are silently ignored via `ignoreUnknownKeys = true` on the parser.
+ * The contract is a discriminated ADT: the [type] picks the variant and only that variant's
+ * sub-object is expected to be populated. Supported values: `normal`, `thinking`, `tool_call`,
+ * `empty`, `error`, `timeout`. Unknown values are tolerated at parse time (pass-through to the
+ * pool) but won't be honored as a contract behaviour.
  *
- * Supported [type] values: `error`, `rate_limit`, `thinking`, `tool_call`, `slow`, `timeout`,
- * `empty`. `normal` and unknown values are pass-through — the request falls back to normal
- * pool-based routing as if no directive was sent.
+ * Fields removed in v2 of the contract and intentionally NOT modeled here: `tokens.output`
+ * (length is now derived from timing), `seed`, `error.code`, `error.message`,
+ * `tool_call.args_keys`. Unknown JSON fields are silently ignored by the parser
+ * (`ignoreUnknownKeys = true`), so older clients still sending them won't break.
  */
 @Serializable
 data class FakerDirective(
@@ -19,55 +22,42 @@ data class FakerDirective(
     val thinking: FakerDirectiveThinking? = null,
     val tool_call: FakerDirectiveToolCall? = null,
     val timing: FakerDirectiveTiming? = null,
-    val tokens: FakerDirectiveTokens? = null,
 )
 
 /**
- * `error` sub-object from the directive. All fields optional — defaults are applied at
- * the routing-policy level (see `HeaderDirectivePolicy.toDecision`).
+ * `error` sub-object from the directive. Per v2 of the contract only `http_status` is part
+ * of the wire shape — `code`/`type`/`message` text is fully owned by the faker.
  *
  * Field name `http_status` mirrors the contract verbatim (snake_case from the JSON spec).
  */
 @Serializable
 data class FakerDirectiveError(
     val http_status: Int? = null,
-    val code: String? = null,
-    val message: String? = null,
 )
 
-/** `thinking` sub-object: min_tokens controls the length of the synthesized Thinking block. */
+/** `thinking` sub-object: min_tokens controls the minimum reasoning prefix length. */
 @Serializable
 data class FakerDirectiveThinking(
     val min_tokens: Int? = null,
 )
 
 /**
- * `tool_call` sub-object: dictates the synthesized tool call name and argument keys.
- * Engine reads tool name from [RequestContext.toolNames] — the route handler overrides
+ * `tool_call` sub-object: only the tool name remains in v2 of the contract.
+ * Engine reads the tool name from [RequestContext.toolNames] — the route handler overrides
  * `ctx.toolNames = [name]` before invoking the engine.
  */
 @Serializable
 data class FakerDirectiveToolCall(
     val name: String? = null,
-    val args_keys: List<String>? = null,
 )
 
-/** `timing` sub-object: ttft / inter-token-latency overrides; converted to [RangeMs] in the engine. */
+/**
+ * `timing` sub-object: ttft / inter-token-latency / total-target overrides.
+ * `total_ms` drives the response length via `round((total_ms − ttft_ms) / itl_ms) + 1`.
+ */
 @Serializable
 data class FakerDirectiveTiming(
     val ttft_ms: Long? = null,
     val itl_ms: Long? = null,
     val total_ms: Long? = null,
-)
-
-/**
- * `tokens` sub-object: caps the output length of the response.
- *
- * Faker treats `output` as the number of output tokens to produce. At wire-time the limit
- * is converted to characters via the 4-chars-per-token convention used everywhere else
- * (see `OpenAiResponseMapper.toUsage`, `SyntheticEntryBuilder`).
- */
-@Serializable
-data class FakerDirectiveTokens(
-    val output: Int? = null,
 )
