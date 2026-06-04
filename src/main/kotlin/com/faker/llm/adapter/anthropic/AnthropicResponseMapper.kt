@@ -58,7 +58,6 @@ class AnthropicResponseMapper(
         ctx: RequestContext,
         model: String,
         requestStartNanos: Long,
-        outputTokensLimit: Int? = null,
     ): MessagesResponse {
         val collected = events.toList()
 
@@ -128,7 +127,7 @@ class AnthropicResponseMapper(
             stop_reason = mapStopReason(finishReason),
             usage = AnthropicUsage(
                 input_tokens = usage.promptChars / 4,
-                output_tokens = outputTokensLimit ?: (usage.completionChars / 4),
+                output_tokens = usage.completionChars / 4,
             ),
             faker_elapsed_ms = elapsedMsSince(requestStartNanos),
         )
@@ -158,7 +157,6 @@ class AnthropicResponseMapper(
         model: String,
         writer: Writer,
         requestStartNanos: Long,
-        outputTokensLimit: Int? = null,
     ) {
         val state = StreamState(
             model = model,
@@ -204,7 +202,7 @@ class AnthropicResponseMapper(
                 }
                 is AbstractStreamEvent.StreamEnd -> {
                     closeOpenBlock(writer, state)
-                    val outputTokens = outputTokensLimit ?: (event.usage.completionChars / 4)
+                    val outputTokens = event.usage.completionChars / 4
                     writer.writeMessageDelta(state, mapStopReason(event.finishReason), outputTokens)
                     writer.writeMessageStop(state)
                 }

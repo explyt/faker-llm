@@ -58,7 +58,6 @@ class OpenAiResponseMapperTest {
             model = "test-model",
             writer = writer,
             requestStartNanos = System.nanoTime(),
-            outputTokensLimit = 200,
         )
 
         val output = writer.toString()
@@ -85,33 +84,33 @@ class OpenAiResponseMapperTest {
             usageFrame.contains("\"usage\":"),
             "Usage frame must include usage field. Was: $usageFrame",
         )
-        // outputTokensLimit=200 must propagate to completion_tokens.
+        // Per v2 contract §6 completion_tokens reflects the *actual* number of tokens streamed
+        // (UsageStub.completionChars / 4 = 80 / 4 = 20).
         assertTrue(
-            usageFrame.contains("\"completion_tokens\":200"),
-            "Usage frame completion_tokens must equal outputTokensLimit (200). Was: $usageFrame",
+            usageFrame.contains("\"completion_tokens\":20"),
+            "Usage frame completion_tokens must equal actual streamed tokens (20). Was: $usageFrame",
         )
 
         assertEquals("data: [DONE]", doneFrame, "Last frame must be data: [DONE]")
     }
 
     @Test
-    fun `non-streaming usage completion_tokens equals outputTokensLimit when set`() = runTest {
+    fun `non-streaming usage completion_tokens reflects actual streamed tokens`() = runTest {
         val events = flowOf<AbstractStreamEvent>(
             AbstractStreamEvent.StreamStart,
             AbstractStreamEvent.TextChunk("hello"),
             AbstractStreamEvent.StreamEnd(
                 finishReason = FinishReason.Stop,
-                usage = UsageStub(promptChars = 40, completionChars = 5),
+                usage = UsageStub(promptChars = 40, completionChars = 80),
             ),
         )
         val response = mapper.buildNonStreaming(
             events = events,
             model = "test-model",
             requestStartNanos = System.nanoTime(),
-            outputTokensLimit = 123,
         )
-        assertEquals(123, response.usage.completion_tokens)
-        assertEquals(40 / 4, response.usage.prompt_tokens)
-        assertEquals(10 + 123, response.usage.total_tokens)
+        assertEquals(20, response.usage.completion_tokens, "completion_tokens = completionChars / 4 = 80 / 4")
+        assertEquals(10, response.usage.prompt_tokens)
+        assertEquals(30, response.usage.total_tokens)
     }
 }

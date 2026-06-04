@@ -8,20 +8,17 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * Parses the `X-Faker-Directive` JSON header (see `faker-contract.md`) and routes each
+ * Parses the `X-Faker-Directive` JSON header (see `faker-contract 2.md`) and routes each
  * directive type into a [RoutingDecision]:
- *  - `error` / `rate_limit` → [RoutingDecision.SyntheticHttpError]
- *  - `slow` / `timeout` / `empty` / `thinking` / `tool_call` → [RoutingDecision.SyntheticBehavior]
- *    (the route handler then drives `SyntheticEntryBuilder` and honors `tokens.output`)
- *  - `normal` / unknown → `null` pass-through; the request continues through
- *    `PromptDirectivePolicy` and finally weighted pool selection. `tokens.output` is still
- *    honored in the pass-through case — the route handler parses it independently and
- *    applies it via `EntryOutputCap` to the pool-picked entry.
+ *  - `error` → [RoutingDecision.SyntheticHttpError] with the requested HTTP status
+ *  - `normal` / `thinking` / `tool_call` / `timeout` / `empty` →
+ *    [RoutingDecision.SyntheticBehavior] (the route handler then drives `SyntheticEntryBuilder`)
+ *  - unknown → `null` pass-through; the request falls through to `PromptDirectivePolicy`
+ *    and finally the weighted pool selector. Strict closed-list enforcement is the client's
+ *    responsibility per v2 of the contract — the faker stays tolerant on the wire.
  *
  * Tolerant on malformed JSON: parsing failure is logged at WARN and the policy returns
- * `null` so the request still goes through the normal pipeline. This keeps load-test
- * clients from breaking when a middlebox truncates the header or when the contract
- * implementation on the other side is still in flight.
+ * `null` so the request still goes through the normal pipeline.
  *
  * Stateless / thread-safe — the [Json] instance has no mutable state.
  */
@@ -49,46 +46,28 @@ class HeaderDirectivePolicy : RoutingPolicy {
 
     /** Maps a parsed directive to a decision, or `null` for pass-through. */
     private fun toDecision(directive: FakerDirective): RoutingDecision? = when (directive.type) {
-        TYPE_ERROR -> {
-            val e = directive.error
-            RoutingDecision.SyntheticHttpError(
-                status = e?.http_status ?: DEFAULT_ERROR_STATUS,
-                code = e?.code,
-                message = e?.message ?: DEFAULT_ERROR_MESSAGE,
-            )
-        }
-        TYPE_RATE_LIMIT -> {
-            val e = directive.error
-            RoutingDecision.SyntheticHttpError(
-                status = RATE_LIMIT_STATUS,
-                code = e?.code ?: DEFAULT_RATE_LIMIT_CODE,
-                message = e?.message ?: DEFAULT_RATE_LIMIT_MESSAGE,
-            )
-        }
+        TYPE_ERROR -> RoutingDecision.SyntheticHttpError(
+            status = directive.error?.http_status ?: DEFAULT_ERROR_STATUS,
+        )
         // Synthesized success responses — the route handler builds the entry via
-        // SyntheticEntryBuilder, bypassing the pool entirely.
-        TYPE_SLOW, TYPE_TIMEOUT, TYPE_EMPTY, TYPE_THINKING, TYPE_TOOL_CALL ->
+        // SyntheticEntryBuilder, bypassing the pool entirely. `normal` joins the
+        // synthetic family in v2: length is derived from timing, not from the pool.
+        TYPE_NORMAL, TYPE_TIMEOUT, TYPE_EMPTY, TYPE_THINKING, TYPE_TOOL_CALL ->
             RoutingDecision.SyntheticBehavior(directive)
-        // `normal` and unknown types fall through to the pool (tolerant).
         else -> null
     }
 
     companion object {
-        /** HTTP header carrying the directive JSON (see faker-contract.md). */
+        /** HTTP header carrying the directive JSON (see faker-contract 2.md). */
         const val HEADER_NAME = "X-Faker-Directive"
 
         private const val TYPE_ERROR = "error"
-        private const val TYPE_RATE_LIMIT = "rate_limit"
-        private const val TYPE_SLOW = "slow"
+        private const val TYPE_NORMAL = "normal"
         private const val TYPE_TIMEOUT = "timeout"
         private const val TYPE_EMPTY = "empty"
         private const val TYPE_THINKING = "thinking"
         private const val TYPE_TOOL_CALL = "tool_call"
 
-        private const val RATE_LIMIT_STATUS = 429
         private const val DEFAULT_ERROR_STATUS = 500
-        private const val DEFAULT_ERROR_MESSAGE = "Faker injected error"
-        private const val DEFAULT_RATE_LIMIT_CODE = "rate_limit_exceeded"
-        private const val DEFAULT_RATE_LIMIT_MESSAGE = "Rate limit exceeded"
     }
 }

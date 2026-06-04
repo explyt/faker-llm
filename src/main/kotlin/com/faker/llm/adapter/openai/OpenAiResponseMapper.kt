@@ -46,7 +46,6 @@ class OpenAiResponseMapper(
         events: Flow<AbstractStreamEvent>,
         model: String,
         requestStartNanos: Long,
-        outputTokensLimit: Int? = null,
     ): ChatCompletionResponse {
         val collected = events.toList()
 
@@ -108,7 +107,7 @@ class OpenAiResponseMapper(
                     finish_reason = mapFinishReason(finishReason),
                 ),
             ),
-            usage = toUsage(usage, outputTokensLimit),
+            usage = toUsage(usage),
             faker_elapsed_ms = elapsedMsSince(requestStartNanos),
         )
     }
@@ -151,7 +150,6 @@ class OpenAiResponseMapper(
         model: String,
         writer: Writer,
         requestStartNanos: Long,
-        outputTokensLimit: Int? = null,
     ) {
         val id = newCompletionId()
         val created = nowEpochSec()
@@ -242,7 +240,7 @@ class OpenAiResponseMapper(
                         model = model,
                         choices = emptyList(),
                         faker_elapsed_ms = timer.nextElapsedMs(),
-                        usage = toUsage(event.usage, outputTokensLimit),
+                        usage = toUsage(event.usage),
                     )
                     writer.write("data: ")
                     writer.write(json.encodeToString(ChatCompletionChunk.serializer(), usageChunk))
@@ -278,15 +276,13 @@ class OpenAiResponseMapper(
     }
 
     /**
-     * Maps the engine's [UsageStub] to the wire [Usage]. When [outputTokensLimit] is set
-     * (i.e. the client sent `tokens.output`), `completion_tokens` is FORCED to that exact
-     * value — the contract requires `usage.completion_tokens == tokens.output`, regardless
-     * of how much text the engine actually streamed (text may have been capped via
-     * `EntryOutputCap`, but the reported count must reflect the directive).
+     * Maps the engine's [UsageStub] to the wire [Usage]. Per faker-contract 2.md §6
+     * `completion_tokens` MUST reflect the number of tokens actually streamed (for
+     * `thinking` requests this also includes the reasoning prefix).
      */
-    private fun toUsage(stub: UsageStub, outputTokensLimit: Int? = null): Usage {
+    private fun toUsage(stub: UsageStub): Usage {
         val promptTokens = stub.promptChars / 4
-        val completionTokens = outputTokensLimit ?: (stub.completionChars / 4)
+        val completionTokens = stub.completionChars / 4
         return Usage(
             prompt_tokens = promptTokens,
             completion_tokens = completionTokens,
