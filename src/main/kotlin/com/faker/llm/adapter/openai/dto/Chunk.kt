@@ -18,15 +18,23 @@ data class ChatCompletionChunk(
     val created: Long,
     val model: String,
     val choices: List<ChunkChoice>,
-    /** Wall-clock ms since the previous emitted frame; for the first frame this equals TTFT. */
-    val faker_elapsed_ms: Long,
     /**
-     * Final usage frame (faker-contract.md §1): after the chunk carrying `finish_reason`,
+     * Final usage frame (faker-contract.md §6): after the chunk carrying `finish_reason`,
      * the faker emits one more chunk with `choices = []` and a populated `usage`. Null on
      * every intermediate frame — the `OpenAiJson` instance runs with `encodeDefaults = false`,
      * so a null `usage` is omitted from the wire.
      */
     val usage: Usage? = null,
+    /**
+     * Body-carried request-id echo (faker-contract.md §7). Emitted on the FIRST chunk so it
+     * survives a stream truncated before the end; null (omitted) on other chunks.
+     */
+    val request_id: String? = null,
+    /**
+     * Body-carried applied-timing echo (faker-contract.md §8). Emitted on the FINAL usage chunk
+     * (it is measured, meaningful only for a completed response); null (omitted) elsewhere.
+     */
+    val x_faker: XFakerEcho? = null,
 )
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)

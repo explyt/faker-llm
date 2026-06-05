@@ -16,11 +16,13 @@ package com.faker.llm.domain
  * @param inspectableContent concatenated user/system text content used by
  *   [com.faker.llm.routing] to scan for `[[faker:...]]` directives. `null` when
  *   the endpoint has no inspectable text (e.g. structured-only requests).
- * @param directiveHeader raw value of the `X-Faker-Directive` HTTP header (JSON payload),
+ * @param directive parsed faker directive carried in the request BODY (`x_faker.directive`),
+ *   used by the OpenAI adapter (faker-contract.md). Consumed by
+ *   [com.faker.llm.routing.policies.BodyDirectivePolicy]. `null` when no directive is present.
+ * @param directiveHeader raw value of the legacy `X-Faker-Directive` HTTP header (JSON payload),
  *   if the client sent one. Consumed by
- *   [com.faker.llm.routing.policies.HeaderDirectivePolicy] to synthesize errors.
- *   `null` when the header is absent — the only HTTP metadata leaking into the
- *   provider-agnostic context, kept opt-in for routing only.
+ *   [com.faker.llm.routing.policies.HeaderDirectivePolicy] (Anthropic adapter, pending migration
+ *   to body transport). `null` when the header is absent.
  */
 data class RequestContext(
     val hasTools: Boolean,
@@ -28,5 +30,6 @@ data class RequestContext(
     val stream: Boolean,
     val model: String?,
     val inspectableContent: String?,
+    val directive: FakerDirective? = null,
     val directiveHeader: String? = null,
 )
