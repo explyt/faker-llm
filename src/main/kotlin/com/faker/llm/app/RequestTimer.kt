@@ -16,10 +16,27 @@ import io.ktor.util.AttributeKey
  */
 internal val RequestStartNanosKey: AttributeKey<Long> = AttributeKey("faker.requestStartNanos")
 
+/**
+ * Body-carried request id ([com.faker.llm.adapter.openai.dto.ChatCompletionRequest.request_id]),
+ * stashed by the route handler right after the body is parsed. The StatusPages error handler
+ * reads it from here to echo `request_id` into error bodies thrown AFTER parsing (e.g. an empty
+ * pool), since the header transport is gone (the license tract strips headers). Absent when the
+ * body never parsed (malformed JSON) — then there is no id to echo, which is contract-acceptable.
+ */
+internal val RequestIdKey: AttributeKey<String> = AttributeKey("faker.requestId")
+
 /** Stamp the start nano-time at the very first instruction of a route handler. */
 internal fun ApplicationCall.markRequestStart() {
     attributes.put(RequestStartNanosKey, System.nanoTime())
 }
+
+/** Stash the body-carried request id so error handlers can echo it. No-op when null. */
+internal fun ApplicationCall.rememberRequestId(requestId: String?) {
+    if (requestId != null) attributes.put(RequestIdKey, requestId)
+}
+
+/** The request id stashed by [rememberRequestId], or `null` if none was recorded. */
+internal fun ApplicationCall.rememberedRequestId(): String? = attributes.getOrNull(RequestIdKey)
 
 /**
  * Returns the start nano-time previously stamped by [markRequestStart], or `System.nanoTime()`

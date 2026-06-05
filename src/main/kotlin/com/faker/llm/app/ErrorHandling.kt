@@ -4,6 +4,7 @@ import com.faker.llm.adapter.anthropic.dto.AnthropicErrorBody
 import com.faker.llm.adapter.anthropic.dto.AnthropicErrorEnvelope
 import com.faker.llm.adapter.openai.dto.OpenAiErrorBody
 import com.faker.llm.adapter.openai.dto.OpenAiErrorEnvelope
+import com.faker.llm.adapter.openai.dto.XFakerEcho
 import com.faker.llm.pool.EmptyPoolException
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -22,13 +23,11 @@ private val errorHandlingLogger = LoggerFactory.getLogger("com.faker.llm.app.Err
  * match the calling provider's wire shape. Dispatch is by request path prefix
  * (`/v1/messages` → Anthropic, otherwise → OpenAI).
  *
- * Each envelope includes `faker_elapsed_ms` measured from the per-request anchor stamped
- * by [markRequestStart] (route handlers do this as their first instruction). If for some
- * reason the anchor is missing (handler that never marked, internal Ktor failure), the
- * fallback in [ApplicationCall.requestStartedNanos] yields ~0ms — honest about the gap.
- *
- * Also echoes the configurable request-id header back as a response header AND inside the
- * JSON envelope body (per faker-contract.md — request_id in body for error responses).
+ * Provider-specific body echo (faker-contract.md):
+ *  - OpenAI: `request_id` (stashed from the request body by the route handler) and
+ *    `x_faker.applied_timing = 0/0/0` are written into the JSON body only — no headers.
+ *  - Anthropic (legacy, pending migration): `request_id` + applied-timing still echoed via
+ *    headers and `faker_elapsed_ms` in the body, measured from the [markRequestStart] anchor.
  */
 internal fun StatusPagesConfig.installFakerErrorHandling(json: Json, requestIdHeader: String) {
     exception<EmptyPoolException> { call, cause ->
@@ -85,9 +84,14 @@ private suspend fun respondError(
         cause.message,
         cause,
     )
-    val elapsedMs = elapsedMsSince(call.requestStartedNanos())
-    val requestId = call.request.headers[requestIdHeader]
+    // Headers to append before writing the body — populated only on the legacy Anthropic path.
+    val legacyHeaders = mutableListOf<Pair<String, String>>()
     val body = if (call.request.path().startsWith(ANTHROPIC_PATH_PREFIX)) {
+        // Legacy header transport (Anthropic), pending migration to the body-only contract.
+        val elapsedMs = elapsedMsSince(call.requestStartedNanos())
+        val requestId = call.request.headers[requestIdHeader]
+        if (requestId != null) legacyHeaders += requestIdHeader to requestId
+        legacyHeaders += APPLIED_TIMING_HEADER to fromElapsed(0L, elapsedMs).toHeaderValue(json)
         json.encodeToString(
             AnthropicErrorEnvelope.serializer(),
             AnthropicErrorEnvelope(
@@ -97,18 +101,20 @@ private suspend fun respondError(
             ),
         )
     } else {
+        // Faker contract (OpenAI): echo in the BODY only. request_id was stashed from the
+        // request body by the route handler; applied_timing is 0/0/0 — the faker fails
+        // synthetically, so the whole E2E counts as gateway overhead (contract §8).
         json.encodeToString(
             OpenAiErrorEnvelope.serializer(),
             OpenAiErrorEnvelope(
                 error = OpenAiErrorBody(message = message, type = type),
-                faker_elapsed_ms = elapsedMs,
-                request_id = requestId,
+                request_id = call.rememberedRequestId(),
+                x_faker = XFakerEcho(AppliedTiming(ttft_ms = 0L, itl_ms = 0L, total_ms = 0L)),
             ),
         )
     }
     try {
-        if (requestId != null) call.response.headers.append(requestIdHeader, requestId)
-        call.response.headers.append(APPLIED_TIMING_HEADER, fromElapsed(0L, elapsedMs).toHeaderValue(json))
+        legacyHeaders.forEach { (name, value) -> call.response.headers.append(name, value) }
         call.respondText(body, ContentType.Application.Json, status)
     } catch (writeFailure: Throwable) {
         errorHandlingLogger.warn(

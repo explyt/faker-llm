@@ -17,7 +17,7 @@ object OpenAiRequestMapper {
 
     private val INSPECTABLE_ROLES = setOf("user", "system")
 
-    fun toContext(request: ChatCompletionRequest, directiveHeader: String? = null): RequestContext {
+    fun toContext(request: ChatCompletionRequest): RequestContext {
         val toolNames = request.tools.orEmpty().map { it.function.name }
         val inspectable = request.messages
             .filter { it.role in INSPECTABLE_ROLES }
@@ -32,7 +32,8 @@ object OpenAiRequestMapper {
             stream = request.stream,
             model = request.model,
             inspectableContent = inspectable,
-            directiveHeader = directiveHeader,
+            // Faker contract: the directive rides in the request body, not a header.
+            directive = request.x_faker?.directive,
         )
     }
 

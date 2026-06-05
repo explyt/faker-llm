@@ -14,8 +14,10 @@ data class ChatCompletionResponse(
     val model: String,
     val choices: List<Choice>,
     val usage: Usage,
-    /** Total wall-clock ms spent inside the faker (from request received to response built). */
-    val faker_elapsed_ms: Long,
+    /** Body-carried request-id echo in the root (faker-contract.md §7). */
+    val request_id: String? = null,
+    /** Body-carried applied-timing echo in the root (faker-contract.md §8). */
+    val x_faker: XFakerEcho? = null,
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -31,6 +33,11 @@ data class Choice(
 data class AssistantMessage(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val role: String = "assistant",
     val content: String? = null,
+    /**
+     * Non-streaming reasoning channel (faker-contract.md §6). Mirrors the streaming
+     * `delta.reasoning_content`; omitted (null) when the response has no thinking block.
+     */
+    val reasoning_content: String? = null,
     val tool_calls: List<ToolCallResponse>? = null,
 )
 

@@ -109,6 +109,12 @@ class DefaultStreamingEngine(
     /**
      * Chunks [text], emits each as `wrap(delta)` with inter-chunk delay, accounting for
      * mid-stream error injection after each emit. Returns `true` if the run must abort.
+     *
+     * The inter-chunk delay is gated on the GLOBAL chunk count ([chunksSoFar]), not a per-part
+     * index: this keeps one `itl` pause between every pair of consecutive tokens even across the
+     * reasoning→content boundary of a multi-part entry. Without it a `thinking` stream would drop
+     * exactly one `itl` at the boundary and run short of the contract's duration model (§4). Only
+     * the very first token of the whole stream is unpaced (its lead is the TTFT, already applied).
      */
     private suspend fun FlowCollector<AbstractStreamEvent>.emitTextLike(
         text: String,
@@ -119,8 +125,8 @@ class DefaultStreamingEngine(
         chunksSoFar: () -> Int,
     ): Boolean {
         val chunkRange = timing.chunkSizeChars.let { it.min..it.max }
-        for ((index, delta) in text.chunkByRange(chunkRange, random).withIndex()) {
-            if (index > 0) delay(timing.interChunkMs.randomIn(random))
+        for (delta in text.chunkByRange(chunkRange, random)) {
+            if (chunksSoFar() > 0) delay(timing.interChunkMs.randomIn(random))
             emit(wrap(delta))
             onChunkEmitted(delta)
             if (mid != null && chunksSoFar() >= mid.afterChunks) {
@@ -144,13 +150,21 @@ class DefaultStreamingEngine(
         }
         val toolName = ctx.toolNames.random(random)
         val callId = CallIdGenerator.next(random)
+        // ToolCallStart is itself a client-visible token (it carries the function name, so the
+        // load client counts it and records its ITL gap). Pace it like any other token: one `itl`
+        // before it UNLESS it is the very first token of the whole stream (then its lead is the
+        // TTFT). Without this, a text/thinking part followed by a tool call would drop one `itl`
+        // at the seam (text-chunk → ToolCallStart back-to-back), running short of §4.
+        if (chunksSoFar() > 0) delay(timing.interChunkMs.randomIn(random))
         emit(AbstractStreamEvent.ToolCallStart(toolName, callId))
 
         // JsonObject.toString() is compact JSON by kotlinx.serialization contract — no PoolJson coupling.
         val argsJson = part.argsTemplate.toString()
         val chunkRange = timing.chunkSizeChars.let { it.min..it.max }
-        for ((index, delta) in argsJson.chunkByRange(chunkRange, random).withIndex()) {
-            // Pace args chunks even from chunk #0 — they follow ToolCallStart, not a fresh stream head.
+        for (delta in argsJson.chunkByRange(chunkRange, random)) {
+            // Pace args chunks even from #0: they follow ToolCallStart, which is NOT counted in
+            // chunksSoFar(), so the global gate would miss this gap. The pause here is always the
+            // ToolCallStart → first-arg gap (a fresh stream head is impossible — ToolCallStart precedes).
             delay(timing.interChunkMs.randomIn(random))
             emit(AbstractStreamEvent.ToolCallArgsChunk(delta))
             onChunkEmitted(delta)

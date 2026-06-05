@@ -1,6 +1,7 @@
 package com.faker.llm.engine
 
 import com.faker.llm.domain.FakerDirective
+import com.faker.llm.domain.FinishReason
 import com.faker.llm.domain.RangeInt
 import com.faker.llm.domain.RangeMs
 import com.faker.llm.domain.RequestContext
@@ -31,14 +32,19 @@ import kotlinx.serialization.json.JsonObject
  */
 object SyntheticEntryBuilder {
 
-    /** Characters-per-token convention shared with the wire `Usage` mapping in adapters. */
+    /**
+     * Characters-per-token convention shared with the wire `Usage` mapping in adapters.
+     * Also the synthetic chunk size: emitting exactly one token per chunk is what makes the
+     * stream honor `itl_ms` per token, so wall-clock duration matches the contract's
+     * `n = round((total−ttft)/itl)+1` length model (faker-contract.md §4). With a larger chunk
+     * the engine would apply far fewer `itl` delays and the stream would collapse to a fraction
+     * of `total_ms`.
+     */
     private const val CHARS_PER_TOKEN = 4
 
     private const val DEFAULT_TTFT_MS = 300L
     private const val DEFAULT_ITL_MS = 20L
     private const val DEFAULT_TOTAL_MS = 2000L
-    private const val DEFAULT_CHUNK_MIN = 16
-    private const val DEFAULT_CHUNK_MAX = 32
     private const val DEFAULT_THINKING_MIN_TOKENS = 20
     private const val DEFAULT_TOOL_NAME = "fake_tool"
 
@@ -88,6 +94,8 @@ object SyntheticEntryBuilder {
             // so the args template is an empty JSON object that yields zero arg chunks.
             parts = listOf(ResponsePart.ToolCall(JsonObject(emptyMap()))),
             timing = timingFromDirective(directive),
+            // Contract §5/§6: a tool call must terminate with finish_reason "tool_calls".
+            finishReason = FinishReason.ToolCalls,
         )
 
         else -> error("SyntheticEntryBuilder.buildEntry called with unsupported type: ${directive.type}")
@@ -118,14 +126,18 @@ object SyntheticEntryBuilder {
         return Math.round(deltaMs.toDouble() / itl.toDouble()).toInt() + 1
     }
 
-    /** Builds a [TimingProfile] from the directive (defaults filled in for absent fields). */
+    /**
+     * Builds a [TimingProfile] from the directive (defaults filled in for absent fields).
+     * Chunk size is fixed at [CHARS_PER_TOKEN] so each emitted chunk is exactly one token and
+     * the engine applies one `itl` delay per token — see the [CHARS_PER_TOKEN] note.
+     */
     private fun timingFromDirective(directive: FakerDirective): TimingProfile {
         val ttft = directive.timing?.ttft_ms ?: DEFAULT_TTFT_MS
         val itl = directive.timing?.itl_ms ?: DEFAULT_ITL_MS
         return TimingProfile(
             ttftMs = RangeMs(ttft, ttft),
             interChunkMs = RangeMs(itl, itl),
-            chunkSizeChars = RangeInt(DEFAULT_CHUNK_MIN, DEFAULT_CHUNK_MAX),
+            chunkSizeChars = RangeInt(CHARS_PER_TOKEN, CHARS_PER_TOKEN),
         )
     }
 

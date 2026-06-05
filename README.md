@@ -143,7 +143,7 @@ ktor {
 - **`anthropic-version` header не валидируется.**
 - **Auth полностью открыт** — любой `Authorization` или его отсутствие.
 - **`force_id` на несуществующий id** → HTTP 500 `pool_misconfigured`. Это feature, клиент видит опечатку.
-- **Reasoning в non-streaming OpenAI** оборачивается в `<think>...</think>` (формат не задокументирован OpenAI).
+- **Reasoning в non-streaming OpenAI** отдаётся отдельным полем `message.reasoning_content` (зеркалит стримовый `delta.reasoning_content`, как в эталонном стабе контракта).
 
 Полный список — `docs/manual-checks.md` + memory bank `faker-llm-known-limitations`.
 
