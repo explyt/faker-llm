@@ -1,6 +1,5 @@
 package com.faker.llm.adapter.openai.dto
 
-import com.faker.llm.domain.FakerDirective
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -9,11 +8,9 @@ import kotlinx.serialization.json.JsonElement
  * [com.faker.llm.adapter.openai.OpenAiJson] (`ignoreUnknownKeys = true`), so extensions like
  * `temperature`, `top_p`, `seed`, `response_format` etc. are tolerated without modeling.
  *
- * The faker contract rides in the BODY (the license tract strips custom HTTP headers):
- *  - [request_id] — top-level client-generated id the faker MUST echo back in the response body.
- *  - [x_faker] — `{ "directive": { ... } }` carrying the per-request directive (see
- *    [com.faker.llm.domain.FakerDirective]). Both are absent in `real` mode and tolerated as
- *    unknown fields by compatible upstreams.
+ * There is NO body-carried faker channel: the license tract strips the request body, so the
+ * directive travels in-band inside `messages[].content` as a `[[faker:...]]` marker
+ * (parsed by [com.faker.llm.routing.policies.PromptDirectivePolicy]). The wire stays clean OpenAI.
  */
 @Serializable
 data class ChatCompletionRequest(
@@ -21,14 +18,6 @@ data class ChatCompletionRequest(
     val messages: List<ChatMessage>,
     val tools: List<ToolDef>? = null,
     val stream: Boolean = false,
-    val request_id: String? = null,
-    val x_faker: XFakerRequest? = null,
-)
-
-/** Body-carried faker extension on the request: the directive selecting the response shape. */
-@Serializable
-data class XFakerRequest(
-    val directive: FakerDirective? = null,
 )
 
 @Serializable

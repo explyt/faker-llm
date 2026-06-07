@@ -10,7 +10,6 @@ import com.faker.llm.pool.PoolLoader
 import com.faker.llm.pool.PoolSelector
 import com.faker.llm.routing.CompositeRequestRouter
 import com.faker.llm.routing.RequestRouter
-import com.faker.llm.routing.policies.BodyDirectivePolicy
 import com.faker.llm.routing.policies.HeaderDirectivePolicy
 import com.faker.llm.routing.policies.PromptDirectivePolicy
 import io.ktor.serialization.kotlinx.json.json
@@ -60,12 +59,12 @@ fun Application.module() {
     val requestIdHeader = System.getenv("FAKER_REQUEST_ID_HEADER")?.takeIf { it.isNotBlank() }
         ?: "X-Request-Id"
     // Policy order matters (first non-null decision wins):
-    //  1. BodyDirectivePolicy   — faker contract: directive in the request body (OpenAI).
-    //  2. HeaderDirectivePolicy — legacy X-Faker-Directive header (Anthropic, pending migration).
-    //  3. PromptDirectivePolicy — inline [[faker:...]] markers in the prompt text.
-    // An explicit directive (body or header) thus overrides any inline marker.
+    //  1. HeaderDirectivePolicy — legacy X-Faker-Directive header (Anthropic surface).
+    //  2. PromptDirectivePolicy — the in-band [[faker:...]] marker in the message text. This is the
+    //     ONLY directive channel for OpenAI: the license tract strips the body & headers, so the
+    //     OpenAI adapter never sets a header directive and this policy always handles it.
     val router: RequestRouter = CompositeRequestRouter(
-        listOf(BodyDirectivePolicy(), HeaderDirectivePolicy(), PromptDirectivePolicy()),
+        listOf(HeaderDirectivePolicy(), PromptDirectivePolicy()),
     )
     val streamingEngine: StreamingEngine = DefaultStreamingEngine()
 
@@ -95,7 +94,7 @@ fun Application.module() {
 
     routing {
         healthRoute()
-        // OpenAI reads/echoes request_id in the body (faker contract); no header name needed.
+        // OpenAI: one-directional in-band contract — directive in the message text, clean response.
         openAiRoutes(poolSelector, router, streamingEngine)
         // Anthropic still uses the legacy header transport pending its own migration.
         anthropicRoutes(poolSelector, router, streamingEngine, requestIdHeader)

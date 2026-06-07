@@ -13,9 +13,6 @@ import com.faker.llm.adapter.openai.dto.OpenAiErrorEnvelope
 import com.faker.llm.adapter.openai.dto.ToolCallDelta
 import com.faker.llm.adapter.openai.dto.ToolCallResponse
 import com.faker.llm.adapter.openai.dto.Usage
-import com.faker.llm.adapter.openai.dto.XFakerEcho
-import com.faker.llm.app.AppliedTiming
-import com.faker.llm.app.elapsedMsSince
 import com.faker.llm.domain.AbstractStreamEvent
 import com.faker.llm.domain.FinishReason
 import com.faker.llm.domain.MidStreamErrorKind
@@ -29,11 +26,10 @@ import kotlin.random.Random
 /**
  * Maps the engine's provider-agnostic `Flow<AbstractStreamEvent>` to OpenAI wire shapes.
  *
- * Faker contract echoes ride in the response BODY (the license tract strips headers):
- *  - `request_id` on the FIRST stream chunk / non-streaming root / error root (§7);
- *  - `x_faker.applied_timing` on the FINAL usage chunk / non-streaming root / error root (§8),
- *    where `total_ms` is the MEASURED wall-clock from [requestStartNanos] to the last byte,
- *    while `ttft_ms`/`itl_ms` are the planned pace passed in by the route handler.
+ * The response is CLEAN OpenAI with no faker echo: the contract is one-directional (the license
+ * tract strips any body/header extension anyway), so there is no `request_id` and no
+ * `x_faker.applied_timing`. The client derives gateway overhead from the timing it requested in the
+ * directive, which the faker applies deterministically (faker-contract.md §7–§8).
  */
 class OpenAiResponseMapper(
     private val random: Random = Random.Default,
@@ -47,10 +43,6 @@ class OpenAiResponseMapper(
     suspend fun buildNonStreaming(
         events: Flow<AbstractStreamEvent>,
         model: String,
-        requestStartNanos: Long,
-        requestId: String?,
-        plannedTtftMs: Long,
-        plannedItlMs: Long,
     ): ChatCompletionResponse {
         val collected = events.toList()
 
@@ -111,23 +103,12 @@ class OpenAiResponseMapper(
                 ),
             ),
             usage = toUsage(usage),
-            request_id = requestId,
-            // total_ms is MEASURED: collecting the cold flow above ran the engine's ttft + itl
-            // delays, so wall-clock elapsed reflects the real upstream time (faker-contract.md §8).
-            x_faker = XFakerEcho(
-                AppliedTiming(
-                    ttft_ms = plannedTtftMs,
-                    itl_ms = plannedItlMs,
-                    total_ms = elapsedMsSince(requestStartNanos),
-                ),
-            ),
         )
     }
 
     /**
-     * Builds an error envelope JSON carrying the body echo: `request_id` (§7) and
-     * `x_faker.applied_timing = 0/0/0` (§8 — the faker returns errors synthetically, so the
-     * whole E2E counts as gateway overhead). The client flags a missing applied-timing echo.
+     * Builds a clean OpenAI error envelope JSON — no faker echo (the contract is one-directional;
+     * the license tract rewrites the error body anyway, and the client checks only the HTTP class).
      *
      * @param code optional `error.code` (e.g. `rate_limit_exceeded`); always emitted as
      *   a JSON field even when `null` to mirror the real OpenAI wire shape
@@ -137,14 +118,11 @@ class OpenAiResponseMapper(
         message: String,
         type: String,
         code: String? = null,
-        requestId: String? = null,
     ): String =
         json.encodeToString(
             OpenAiErrorEnvelope.serializer(),
             OpenAiErrorEnvelope(
                 error = OpenAiErrorBody(message = message, type = type, code = code),
-                request_id = requestId,
-                x_faker = XFakerEcho(AppliedTiming(ttft_ms = 0L, itl_ms = 0L, total_ms = 0L)),
             ),
         )
 
@@ -162,20 +140,10 @@ class OpenAiResponseMapper(
         events: Flow<AbstractStreamEvent>,
         model: String,
         writer: Writer,
-        requestStartNanos: Long,
-        requestId: String?,
-        plannedTtftMs: Long,
-        plannedItlMs: Long,
     ) {
         val id = newCompletionId()
         val created = nowEpochSec()
-        var firstFrameWritten = false
         var aborted = false
-
-        // request_id rides on the FIRST emitted frame so it survives a stream truncated
-        // before the end (faker-contract.md §7); subsequent frames omit it.
-        fun frameRequestId(): String? =
-            if (firstFrameWritten) null else requestId.also { firstFrameWritten = true }
 
         fun writeDelta(delta: ChunkDelta) {
             writer.writeDataFrame(
@@ -184,7 +152,6 @@ class OpenAiResponseMapper(
                     created = created,
                     model = model,
                     choices = listOf(ChunkChoice(delta = delta)),
-                    request_id = frameRequestId(),
                 ),
             )
         }
@@ -238,7 +205,7 @@ class OpenAiResponseMapper(
                     aborted = true
                 }
                 is AbstractStreamEvent.StreamEnd -> {
-                    // finish_reason frame — no usage, no echo (faker-contract.md §6/§10).
+                    // finish_reason frame — no usage (faker-contract.md §6).
                     val finalChunk = ChatCompletionChunk(
                         id = id,
                         created = created,
@@ -249,27 +216,18 @@ class OpenAiResponseMapper(
                                 finish_reason = mapFinishReason(event.finishReason),
                             ),
                         ),
-                        request_id = frameRequestId(),
                     )
                     writer.write("data: ")
                     writer.write(json.encodeToString(ChatCompletionChunk.serializer(), finalChunk))
                     writer.write("\n\n")
-                    // Final usage frame with `choices=[]`, the populated `usage`, and the
-                    // applied-timing echo. total_ms is MEASURED here (request → last byte), not
-                    // copied from the directive (faker-contract.md §8).
+                    // Final usage frame: `choices=[]` and the populated `usage`. No faker echo —
+                    // the response stays clean OpenAI (faker-contract.md §6/§7).
                     val usageChunk = ChatCompletionChunk(
                         id = id,
                         created = created,
                         model = model,
                         choices = emptyList(),
                         usage = toUsage(event.usage),
-                        x_faker = XFakerEcho(
-                            AppliedTiming(
-                                ttft_ms = plannedTtftMs,
-                                itl_ms = plannedItlMs,
-                                total_ms = elapsedMsSince(requestStartNanos),
-                            ),
-                        ),
                     )
                     writer.write("data: ")
                     writer.write(json.encodeToString(ChatCompletionChunk.serializer(), usageChunk))
@@ -291,7 +249,7 @@ class OpenAiResponseMapper(
     }
 
     /**
-     * Maps the engine's [UsageStub] to the wire [Usage]. Per faker-contract 2.md §6
+     * Maps the engine's [UsageStub] to the wire [Usage]. Per faker-contract.md §6
      * `completion_tokens` MUST reflect the number of tokens actually streamed (for
      * `thinking` requests this also includes the reasoning prefix).
      */

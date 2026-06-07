@@ -4,7 +4,6 @@ import com.faker.llm.adapter.anthropic.dto.AnthropicErrorBody
 import com.faker.llm.adapter.anthropic.dto.AnthropicErrorEnvelope
 import com.faker.llm.adapter.openai.dto.OpenAiErrorBody
 import com.faker.llm.adapter.openai.dto.OpenAiErrorEnvelope
-import com.faker.llm.adapter.openai.dto.XFakerEcho
 import com.faker.llm.pool.EmptyPoolException
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -23,11 +22,11 @@ private val errorHandlingLogger = LoggerFactory.getLogger("com.faker.llm.app.Err
  * match the calling provider's wire shape. Dispatch is by request path prefix
  * (`/v1/messages` → Anthropic, otherwise → OpenAI).
  *
- * Provider-specific body echo (faker-contract.md):
- *  - OpenAI: `request_id` (stashed from the request body by the route handler) and
- *    `x_faker.applied_timing = 0/0/0` are written into the JSON body only — no headers.
- *  - Anthropic (legacy, pending migration): `request_id` + applied-timing still echoed via
- *    headers and `faker_elapsed_ms` in the body, measured from the [markRequestStart] anchor.
+ * Provider-specific body shape:
+ *  - OpenAI: clean OpenAI error envelope, no faker echo (the contract is one-directional and the
+ *    license tract rewrites the error body anyway — faker-contract.md §7).
+ *  - Anthropic (legacy): `request_id` + applied-timing still echoed via headers and
+ *    `faker_elapsed_ms` in the body, measured from the [markRequestStart] anchor.
  */
 internal fun StatusPagesConfig.installFakerErrorHandling(json: Json, requestIdHeader: String) {
     exception<EmptyPoolException> { call, cause ->
@@ -101,15 +100,12 @@ private suspend fun respondError(
             ),
         )
     } else {
-        // Faker contract (OpenAI): echo in the BODY only. request_id was stashed from the
-        // request body by the route handler; applied_timing is 0/0/0 — the faker fails
-        // synthetically, so the whole E2E counts as gateway overhead (contract §8).
+        // Faker contract (OpenAI): clean error envelope, no echo — the contract is one-directional
+        // and the license tract rewrites the error body; the client checks only the HTTP class.
         json.encodeToString(
             OpenAiErrorEnvelope.serializer(),
             OpenAiErrorEnvelope(
                 error = OpenAiErrorBody(message = message, type = type),
-                request_id = call.rememberedRequestId(),
-                x_faker = XFakerEcho(AppliedTiming(ttft_ms = 0L, itl_ms = 0L, total_ms = 0L)),
             ),
         )
     }

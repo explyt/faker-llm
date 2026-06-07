@@ -18,7 +18,7 @@ import kotlinx.serialization.json.JsonObject
  * `timeout` is NOT handled here — the route handler suspends with `delay(Long.MAX_VALUE)`
  * before any engine call.
  *
- * ### Length model (faker-contract 2.md §4)
+ * ### Length model (faker-contract.md §4)
  * For `normal` / `thinking` the stream length is derived from timing:
  * ```
  *   content_tokens = round((total_ms − ttft_ms) / itl_ms) + 1
@@ -112,7 +112,7 @@ object SyntheticEntryBuilder {
     }
 
     /**
-     * Implements faker-contract 2.md §4: `round((total_ms − ttft_ms) / itl_ms) + 1`,
+     * Implements faker-contract.md §4: `round((total_ms − ttft_ms) / itl_ms) + 1`,
      * clamped to a minimum of 1 (the contract floor — at least one content token).
      * `includeTotal=false` callers (`empty`, `tool_call`) should not invoke this.
      */
