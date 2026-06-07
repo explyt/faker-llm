@@ -14,10 +14,6 @@ data class ChatCompletionResponse(
     val model: String,
     val choices: List<Choice>,
     val usage: Usage,
-    /** Body-carried request-id echo in the root (faker-contract.md §7). */
-    val request_id: String? = null,
-    /** Body-carried applied-timing echo in the root (faker-contract.md §8). */
-    val x_faker: XFakerEcho? = null,
 )
 
 @OptIn(ExperimentalSerializationApi::class)

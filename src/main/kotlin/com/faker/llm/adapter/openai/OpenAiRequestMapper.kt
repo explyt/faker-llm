@@ -31,9 +31,9 @@ object OpenAiRequestMapper {
             toolNames = toolNames,
             stream = request.stream,
             model = request.model,
+            // Faker contract: the directive rides in-band inside the message text (the license
+            // tract strips the body & headers); PromptDirectivePolicy parses it from here.
             inspectableContent = inspectable,
-            // Faker contract: the directive rides in the request body, not a header.
-            directive = request.x_faker?.directive,
         )
     }
 

@@ -25,16 +25,6 @@ data class ChatCompletionChunk(
      * so a null `usage` is omitted from the wire.
      */
     val usage: Usage? = null,
-    /**
-     * Body-carried request-id echo (faker-contract.md §7). Emitted on the FIRST chunk so it
-     * survives a stream truncated before the end; null (omitted) on other chunks.
-     */
-    val request_id: String? = null,
-    /**
-     * Body-carried applied-timing echo (faker-contract.md §8). Emitted on the FINAL usage chunk
-     * (it is measured, meaningful only for a completed response); null (omitted) elsewhere.
-     */
-    val x_faker: XFakerEcho? = null,
 )
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)

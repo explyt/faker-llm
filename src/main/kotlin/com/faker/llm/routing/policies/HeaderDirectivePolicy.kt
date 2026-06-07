@@ -68,6 +68,9 @@ class HeaderDirectivePolicy : RoutingPolicy {
         private const val TYPE_THINKING = "thinking"
         private const val TYPE_TOOL_CALL = "tool_call"
 
-        private const val DEFAULT_ERROR_STATUS = 500
+        // Kept in lockstep with PromptDirectivePolicy's default so `type=error` without a status
+        // yields the same HTTP status on every surface (faker-contract.md §2). In practice the
+        // client always sends an explicit status, so this fallback rarely fires.
+        private const val DEFAULT_ERROR_STATUS = 400
     }
 }
