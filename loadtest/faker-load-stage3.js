@@ -53,7 +53,7 @@ const BASE = __ENV.BASE_URL || 'http://localhost:8080';
 
 export function streamingRequest() {
   const body = JSON.stringify({
-    model: 'gpt-4o-fake',
+    model: 'faker',
     messages: [{ role: 'user', content: 'Hello, what is the weather?' }],
     stream: true,
   });
@@ -66,7 +66,7 @@ export function streamingRequest() {
 
 export function nonStreamingRequest() {
   const body = JSON.stringify({
-    model: 'gpt-4o-fake',
+    model: 'faker',
     messages: [{ role: 'user', content: 'Hi' }],
   });
   const res = http.post(`${BASE}/v1/chat/completions`, body, {
@@ -78,7 +78,7 @@ export function nonStreamingRequest() {
 
 export function toolCallRequest() {
   const body = JSON.stringify({
-    model: 'gpt-4o-fake',
+    model: 'faker',
     stream: true,
     messages: [{ role: 'user', content: '[[faker:force_tag:tool_call]] weather?' }],
     tools: [{

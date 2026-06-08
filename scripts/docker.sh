@@ -79,7 +79,7 @@ case "$CMD" in
     echo "[docker.sh] /v1/chat/completions non-streaming..."
     curl -fsS -X POST "$BASE/v1/chat/completions" \
       -H "Content-Type: application/json" \
-      -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"hi"}]}' \
+      -d '{"model":"faker","messages":[{"role":"user","content":"hi"}]}' \
       | head -c 200
     echo
     ;;

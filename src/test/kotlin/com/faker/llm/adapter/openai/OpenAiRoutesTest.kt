@@ -28,8 +28,10 @@ import kotlin.test.assertTrue
  */
 class OpenAiRoutesTest {
 
+    private val modelId = "faker"
+
     private fun body(content: String, stream: Boolean = false): String =
-        """{"model":"m","stream":$stream,"messages":[{"role":"user","content":"$content"}]}"""
+        """{"model":"$modelId","stream":$stream,"messages":[{"role":"user","content":"$content"}]}"""
 
     private fun testRoutes(block: suspend (io.ktor.client.HttpClient) -> Unit) = testApplication {
         application {
@@ -38,6 +40,7 @@ class OpenAiRoutesTest {
                     selector = PoolSelector(emptyList()),
                     router = CompositeRequestRouter(listOf(PromptDirectivePolicy())),
                     engine = DefaultStreamingEngine(),
+                    modelId = modelId,
                 )
             }
         }
@@ -93,6 +96,19 @@ class OpenAiRoutesTest {
         assertTrue(text.contains("\"choices\":"), "must carry choices. Was: $text")
         assertFalse(text.contains("request_id"), "root must not echo request_id. Was: $text")
         assertFalse(text.contains("x_faker"), "root must not carry x_faker. Was: $text")
+    }
+
+    @Test
+    fun `unknown model is rejected with 404 model_not_found`() = testRoutes { client ->
+        val response = client.post("/v1/chat/completions") {
+            contentType(ContentType.Application.Json)
+            // Valid directive, but the wrong model — model validation must win and 404 first.
+            setBody("""{"model":"gpt-4o-fake","messages":[{"role":"user","content":"hi [[faker:type=error;status=429]]"}]}""")
+        }
+        assertEquals(404, response.status.value, "unknown model must be 404, not the directive's 429")
+        val text = response.bodyAsText()
+        assertTrue(text.contains("\"code\":\"model_not_found\""), "must carry model_not_found code. Was: $text")
+        assertTrue(text.contains("\"type\":\"invalid_request_error\""), "must carry invalid_request_error type. Was: $text")
     }
 
     @Test

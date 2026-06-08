@@ -19,7 +19,7 @@ PORT=8081 gradle run              # override
 ```bash
 curl -sS http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"Hello!"}]}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
 Ожидается: `200`, `chatcmpl-…`, `object:"chat.completion"`, непустой `choices[0].message.content`, `usage` присутствует.
@@ -29,7 +29,7 @@ curl -sS http://localhost:8080/v1/chat/completions \
 ```bash
 curl -sS -N http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
 ```
 
 Ожидается: серия `data: {...}\n\n`, финал `data: [DONE]\n\n`. Между чанками видны задержки.
@@ -40,7 +40,7 @@ curl -sS -N http://localhost:8080/v1/chat/completions \
 curl -sS -N http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model":"gpt-4o-fake",
+    "model":"faker",
     "messages":[{"role":"user","content":"[[faker:force_tag:tool_call]] What is the weather in Paris?"}],
     "tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}}],
     "stream":true
@@ -54,7 +54,7 @@ curl -sS -N http://localhost:8080/v1/chat/completions \
 ```bash
 curl -sS -i http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"[[faker:force_status:429]] test"}]}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_status:429]] test"}]}'
 ```
 
 Ожидается: `HTTP/1.1 429`, `{"error":{"message":"…","type":"rate_limit_error","code":null,"param":null}}`.
@@ -64,7 +64,7 @@ curl -sS -i http://localhost:8080/v1/chat/completions \
 ```bash
 curl -sS -i http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"[[faker:force_id:nonexistent-id]] test"}]}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_id:nonexistent-id]] test"}]}'
 ```
 
 Ожидается: `HTTP/1.1 500`, `{"error":{"message":"No applicable pool entry: …","type":"pool_misconfigured", …}}`.
@@ -128,7 +128,7 @@ curl -sS -N http://localhost:8080/v1/messages \
 ```bash
 curl -sS -N http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-fake","messages":[{"role":"user","content":"[[faker:force_tag:mid_stream_error]] test"}],"stream":true}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_tag:mid_stream_error]] test"}],"stream":true}'
 ```
 
 Ожидается (одно из трёх — зависит от weighted pick): `AbruptDisconnect` — стрим обрывается без терминатора; `ErrorEvent` — последний фрейм `event: error\ndata: {...}`; `MalformedJson` — последний фрейм `data: {` сломанный. Главное: **`[DONE]` не появляется**.

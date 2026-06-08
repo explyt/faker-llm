@@ -41,7 +41,8 @@ Hexagonal: provider-agnostic ядро (`domain` + `pool` + `routing` + `engine`)
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/healthz` | Liveness probe → `200 ok` |
-| POST | `/v1/chat/completions` | OpenAI Chat Completions (stream + non-stream, tool_calls, reasoning) |
+| GET | `/v1/models` (и `/models`) | Статический OpenAI-листинг: единственная модель `faker` |
+| POST | `/v1/chat/completions` | OpenAI Chat Completions (stream + non-stream, tool_calls, reasoning). Принимает только `model: "faker"`, иначе `404 model_not_found` |
 | POST | `/v1/messages` | Anthropic Messages (stream + non-stream, thinking, tool_use, multi-event SSE) |
 
 ## Prompt directives (форсинг сценариев)
@@ -64,19 +65,19 @@ Hexagonal: provider-agnostic ядро (`domain` + `pool` + `routing` + `engine`)
 # Детерминированно короткий ответ, стриминг
 curl -N http://localhost:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"x","stream":true,
+  -d '{"model":"faker","stream":true,
        "messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}'
 
 # Anthropic с thinking
 curl -N http://localhost:8080/v1/messages \
   -H 'Content-Type: application/json' \
-  -d '{"model":"x","max_tokens":1024,"stream":true,
+  -d '{"model":"faker","max_tokens":1024,"stream":true,
        "messages":[{"role":"user","content":"[[faker:force_tag:reasoning]] think"}]}'
 
 # Принудительный 429
 curl -i http://localhost:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"x","messages":[{"role":"user","content":"[[faker:force_status:429]] x"}]}'
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_status:429]] x"}]}'
 ```
 
 Полный набор из 11 сценариев — в [`docs/manual-checks.md`](docs/manual-checks.md).
@@ -134,6 +135,7 @@ ktor {
 | Var | Default | Effect |
 |---|---|---|
 | `PORT` | 8080 | HTTP port |
+| `FAKER_MODEL_ID` | `faker` | Единственная валидная модель: гейтит `/v1/chat/completions` (404 для прочих) и публикуется в `/v1/models` |
 | `FAKER_POOL_DIR` | `pool` | classpath-директория пула |
 | `JAVA_OPTS` | `-Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -Dkotlinx.coroutines.scheduler.max.pool.size=256` | JVM-флаги (используется скриптами) |
 

@@ -2,8 +2,10 @@ package com.faker.llm
 
 import com.faker.llm.adapter.anthropic.anthropicRoutes
 import com.faker.llm.adapter.openai.openAiRoutes
+import com.faker.llm.app.FAKER_MODEL_ID
 import com.faker.llm.app.healthRoute
 import com.faker.llm.app.installFakerErrorHandling
+import com.faker.llm.app.modelsRoute
 import com.faker.llm.engine.DefaultStreamingEngine
 import com.faker.llm.engine.StreamingEngine
 import com.faker.llm.pool.PoolLoader
@@ -58,6 +60,9 @@ fun Application.module() {
     // faker-contract.md). Default "X-Request-Id" matches the contract default.
     val requestIdHeader = System.getenv("FAKER_REQUEST_ID_HEADER")?.takeIf { it.isNotBlank() }
         ?: "X-Request-Id"
+    // This faker serves exactly one model id; ops can override it without a rebuild. The same id
+    // gates /v1/chat/completions (404 for anything else) and is advertised by /v1/models.
+    val modelId = System.getenv("FAKER_MODEL_ID")?.takeIf { it.isNotBlank() } ?: FAKER_MODEL_ID
     // Policy order matters (first non-null decision wins):
     //  1. HeaderDirectivePolicy — legacy X-Faker-Directive header (Anthropic surface).
     //  2. PromptDirectivePolicy — the in-band [[faker:...]] marker in the message text. This is the
@@ -94,8 +99,11 @@ fun Application.module() {
 
     routing {
         healthRoute()
+        // Static model discovery: advertises the configured model (GET /v1/models and /models).
+        modelsRoute(modelId)
         // OpenAI: one-directional in-band contract — directive in the message text, clean response.
-        openAiRoutes(poolSelector, router, streamingEngine)
+        // Validates the model: only `modelId` is served, anything else → 404 model_not_found.
+        openAiRoutes(poolSelector, router, streamingEngine, modelId)
         // Anthropic still uses the legacy header transport pending its own migration.
         anthropicRoutes(poolSelector, router, streamingEngine, requestIdHeader)
     }

@@ -26,7 +26,7 @@ CODE="$(printf '%s' "$RESP" | tail -n1)"
 echo "→ POST /v1/chat/completions (non-stream, force_tag:short)"
 RESP="$(curl -sS -w '\n%{http_code}' "$BASE/v1/chat/completions" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"smoke","messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}')"
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}')"
 CODE="$(printf '%s' "$RESP" | tail -n1)"
 BODY="$(printf '%s' "$RESP" | strip_last_line)"
 [ "$CODE" = "200" ] || fail "openai non-stream: code=$CODE body=$(printf '%s' "$BODY" | head -c 200)"
@@ -38,7 +38,7 @@ pass "openai non-stream OK"
 echo "→ POST /v1/messages (non-stream, force_tag:short)"
 RESP="$(curl -sS -w '\n%{http_code}' "$BASE/v1/messages" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"smoke","max_tokens":1024,"messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}')"
+  -d '{"model":"faker","max_tokens":1024,"messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}')"
 CODE="$(printf '%s' "$RESP" | tail -n1)"
 BODY="$(printf '%s' "$RESP" | strip_last_line)"
 [ "$CODE" = "200" ] || fail "anthropic non-stream: code=$CODE body=$(printf '%s' "$BODY" | head -c 200)"
@@ -50,7 +50,7 @@ pass "anthropic non-stream OK"
 echo "→ POST /v1/chat/completions (force_status:429)"
 RESP="$(curl -sS -w '\n%{http_code}' "$BASE/v1/chat/completions" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"smoke","messages":[{"role":"user","content":"[[faker:force_status:429]] x"}]}')"
+  -d '{"model":"faker","messages":[{"role":"user","content":"[[faker:force_status:429]] x"}]}')"
 CODE="$(printf '%s' "$RESP" | tail -n1)"
 BODY="$(printf '%s' "$RESP" | strip_last_line)"
 [ "$CODE" = "429" ] || fail "force_status 429: code=$CODE body=$BODY"
@@ -62,7 +62,7 @@ echo "→ POST /v1/chat/completions (stream, force_tag:short)"
 STREAM_OUT="$(mktemp)"
 curl -sS -N "$BASE/v1/chat/completions" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"smoke","stream":true,"messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}' \
+  -d '{"model":"faker","stream":true,"messages":[{"role":"user","content":"[[faker:force_tag:short]] hi"}]}' \
   > "$STREAM_OUT"
 LAST_DATA="$(grep '^data:' "$STREAM_OUT" | tail -n1)"
 [ "$LAST_DATA" = "data: [DONE]" ] || fail "stream did not end with [DONE], last: $LAST_DATA"

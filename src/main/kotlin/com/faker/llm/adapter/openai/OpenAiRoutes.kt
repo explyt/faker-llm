@@ -24,16 +24,21 @@ import kotlinx.coroutines.delay
 
 /**
  * Registers `POST /v1/chat/completions`. Wires the OpenAI surface to the provider-agnostic
- * core: parse → route → select → branch (HTTP error / streaming / non-streaming).
+ * core: parse → validate model → route → select → branch (HTTP error / streaming / non-streaming).
  *
  * The faker contract is one-directional and in-band: the directive rides inside the message text
  * (the license tract strips the body and headers), and the response is CLEAN OpenAI with no echo —
  * no `request_id`, no `x_faker.applied_timing` (faker-contract.md §7–§8).
+ *
+ * This faker serves exactly one model, [modelId]. Any other `model` is rejected with HTTP 404
+ * `model_not_found` (mirroring real OpenAI), so a gateway pointed at the wrong model surfaces the
+ * misconfiguration immediately instead of silently getting a synthetic answer.
  */
 fun Route.openAiRoutes(
     selector: PoolSelector,
     router: RequestRouter,
     engine: StreamingEngine,
+    modelId: String,
     mapper: OpenAiResponseMapper = OpenAiResponseMapper(),
 ) {
     val json = OpenAiJson.json
@@ -44,6 +49,12 @@ fun Route.openAiRoutes(
             json.decodeFromString(ChatCompletionRequest.serializer(), raw)
         }.getOrElse { e ->
             respondInvalidRequest(call, mapper, reason = e.message ?: "invalid JSON")
+            return@post
+        }
+
+        // Exactly one model is served; an unknown model is a 404 before any work.
+        if (request.model != modelId) {
+            respondModelNotFound(call, mapper, request.model)
             return@post
         }
 
@@ -123,6 +134,23 @@ private suspend fun respondInvalidRequest(
         mapper.buildErrorEnvelope(
             message = "Invalid request: $reason",
             type = "invalid_request_error",
+        ),
+    )
+}
+
+/** HTTP 404 with the OpenAI-shaped `model_not_found` error for an unrecognized model. */
+private suspend fun respondModelNotFound(
+    call: ApplicationCall,
+    mapper: OpenAiResponseMapper,
+    model: String,
+) {
+    respondJson(
+        call,
+        HttpStatusCode.NotFound,
+        mapper.buildErrorEnvelope(
+            message = "The model '$model' does not exist",
+            type = "invalid_request_error",
+            code = "model_not_found",
         ),
     )
 }
