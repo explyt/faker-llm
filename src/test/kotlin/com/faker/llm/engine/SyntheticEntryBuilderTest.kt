@@ -2,6 +2,7 @@ package com.faker.llm.engine
 
 import com.faker.llm.domain.AbstractStreamEvent
 import com.faker.llm.domain.FakerDirective
+import com.faker.llm.domain.FakerDirectiveReplay
 import com.faker.llm.domain.FakerDirectiveThinking
 import com.faker.llm.domain.FakerDirectiveTiming
 import com.faker.llm.domain.FakerDirectiveToolCall
@@ -12,6 +13,7 @@ import com.faker.llm.domain.ResponsePart
 import com.faker.llm.domain.SuccessEntry
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -69,6 +71,47 @@ class SyntheticEntryBuilderTest {
     fun `empty entry has no parts`() {
         val entry = SyntheticEntryBuilder.buildEntry(FakerDirective(type = "empty"))
         assertTrue(entry.parts.isEmpty())
+    }
+
+    @Test
+    fun `replay entry echoes recorded content and exact tool call`() = runTest {
+        // Payload mirrors the client's profile.replayPayload schema (base64url, no pad). Content
+        // is non-ASCII to lock UTF-8 round-trip; the tool name/args must be echoed verbatim.
+        val payloadJson =
+            """{"content":"привет мир","tool_calls":[{"name":"read_file","arguments":"{\"path\":\"a.go\"}"}],"finish_reason":"tool_calls"}"""
+        val b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.toByteArray(Charsets.UTF_8))
+        val directive = FakerDirective(
+            type = "replay",
+            timing = FakerDirectiveTiming(ttft_ms = 10, itl_ms = 1),
+            replay = FakerDirectiveReplay(payload = b64),
+        )
+
+        val entry = SyntheticEntryBuilder.buildEntry(directive)
+        assertEquals(FinishReason.ToolCalls, entry.finishReason)
+        assertTrue(entry.requiresTools)
+        assertEquals("привет мир", entry.parts.filterIsInstance<ResponsePart.Text>().single().content)
+        assertEquals("read_file", entry.parts.filterIsInstance<ResponsePart.ToolCall>().single().toolName)
+
+        // End-to-end: ctx has NO toolNames, so a successful tool call proves the engine uses the
+        // part's explicit name (replay) rather than picking from the context.
+        val events = DefaultStreamingEngine().execute(entry, ctx()).toList()
+        val start = events.filterIsInstance<AbstractStreamEvent.ToolCallStart>().single()
+        assertEquals("read_file", start.toolName)
+        val args = events.filterIsInstance<AbstractStreamEvent.ToolCallArgsChunk>().joinToString("") { it.delta }
+        assertTrue(args.contains("a.go"), "echoed args must carry the recorded value, got $args")
+        assertEquals("привет мир", events.filterIsInstance<AbstractStreamEvent.TextChunk>().joinToString("") { it.delta })
+    }
+
+    @Test
+    fun `replay entry with content only finishes with stop`() {
+        val payloadJson = """{"content":"hello","finish_reason":"stop"}"""
+        val b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.toByteArray(Charsets.UTF_8))
+        val entry = SyntheticEntryBuilder.buildEntry(
+            FakerDirective(type = "replay", replay = FakerDirectiveReplay(payload = b64)),
+        )
+        assertEquals(FinishReason.Stop, entry.finishReason)
+        assertTrue(!entry.requiresTools)
+        assertEquals("hello", entry.parts.filterIsInstance<ResponsePart.Text>().single().content)
     }
 
     @Test

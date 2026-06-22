@@ -60,6 +60,19 @@ class PromptDirectivePolicyTest {
         assertTrue(decision is RoutingDecision.SyntheticBehavior && decision.directive.type == "timeout")
     }
 
+    @Test
+    fun `replay marker carries the payload and pacing, maps to synthetic behavior`() {
+        // base64url(no-pad) payload — alphabet [A-Za-z0-9-_], free of `;`/`=`/`]]`, so it rides as
+        // one marker value. Must round-trip byte-identically with the client's DirectiveMarker.
+        val decision = decide("recorded prompt [[faker:type=replay;ttft=10;itl=1;payload=eyJjb250ZW50IjoiaGkifQ]] tail")
+        assertTrue(decision is RoutingDecision.SyntheticBehavior)
+        val d = (decision as RoutingDecision.SyntheticBehavior).directive
+        assertEquals("replay", d.type)
+        assertEquals("eyJjb250ZW50IjoiaGkifQ", d.replay?.payload)
+        assertEquals(10L, d.timing?.ttft_ms)
+        assertEquals(1L, d.timing?.itl_ms)
+    }
+
     // --- error ------------------------------------------------------------------------------
 
     @Test

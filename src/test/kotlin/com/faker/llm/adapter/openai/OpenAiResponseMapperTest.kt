@@ -165,4 +165,32 @@ class OpenAiResponseMapperTest {
         assertFalse(raw.contains("request_id"), "error body must not echo request_id. Was: $raw")
         assertFalse(raw.contains("x_faker"), "error body must not carry x_faker. Was: $raw")
     }
+
+    @Test
+    fun `multiple tool calls stream with distinct indices`() = runTest {
+        // OpenAI clients merge tool-call deltas by index; without a distinct index per call,
+        // two tool calls (e.g. a replayed multi-tool response) collapse into one garbled call.
+        val writer = StringWriter()
+        val events = flowOf<AbstractStreamEvent>(
+            AbstractStreamEvent.StreamStart,
+            AbstractStreamEvent.ToolCallStart("read_file", "c1"),
+            AbstractStreamEvent.ToolCallArgsChunk("{}"),
+            AbstractStreamEvent.ToolCallEnd("c1"),
+            AbstractStreamEvent.ToolCallStart("write_file", "c2"),
+            AbstractStreamEvent.ToolCallArgsChunk("{}"),
+            AbstractStreamEvent.ToolCallEnd("c2"),
+            AbstractStreamEvent.StreamEnd(
+                finishReason = FinishReason.ToolCalls,
+                usage = UsageStub(promptChars = 40, completionChars = 8),
+            ),
+        )
+
+        mapper.streamSse(events, "test-model", writer)
+
+        val output = writer.toString()
+        assertTrue(output.contains("\"name\":\"read_file\""), "first tool name missing:\n$output")
+        assertTrue(output.contains("\"name\":\"write_file\""), "second tool name missing:\n$output")
+        assertTrue(output.contains("\"index\":0"), "first tool call must use index 0:\n$output")
+        assertTrue(output.contains("\"index\":1"), "second tool call must use index 1 (distinct):\n$output")
+    }
 }

@@ -145,10 +145,14 @@ class DefaultStreamingEngine(
         onChunkEmitted: (String) -> Unit,
         chunksSoFar: () -> Int,
     ): Boolean {
-        check(ctx.toolNames.isNotEmpty()) {
-            "ToolCall part requires ctx.toolNames to be non-empty — selector should have filtered this entry"
+        // An explicit per-part name (replay: echo the recorded tool call) wins; otherwise the
+        // name is picked from the request's tools (pool/synthetic), which must be non-empty.
+        val toolName = part.toolName ?: run {
+            check(ctx.toolNames.isNotEmpty()) {
+                "ToolCall part requires ctx.toolNames to be non-empty — selector should have filtered this entry"
+            }
+            ctx.toolNames.random(random)
         }
-        val toolName = ctx.toolNames.random(random)
         val callId = CallIdGenerator.next(random)
         // ToolCallStart is itself a client-visible token (it carries the function name, so the
         // load client counts it and records its ITL gap). Pace it like any other token: one `itl`

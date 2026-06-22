@@ -2,6 +2,7 @@ package com.faker.llm.routing.policies
 
 import com.faker.llm.domain.FakerDirective
 import com.faker.llm.domain.FakerDirectiveError
+import com.faker.llm.domain.FakerDirectiveReplay
 import com.faker.llm.domain.FakerDirectiveTiming
 import com.faker.llm.domain.RequestContext
 import com.faker.llm.routing.RoutingDecision
@@ -45,7 +46,7 @@ class PromptDirectivePolicy : RoutingPolicy {
         TYPE_ERROR -> RoutingDecision.SyntheticHttpError(
             status = directive.error?.http_status ?: DEFAULT_ERROR_STATUS,
         )
-        TYPE_NORMAL, TYPE_THINKING, TYPE_TOOL_CALL, TYPE_TIMEOUT, TYPE_EMPTY ->
+        TYPE_NORMAL, TYPE_THINKING, TYPE_TOOL_CALL, TYPE_TIMEOUT, TYPE_EMPTY, TYPE_REPLAY ->
             RoutingDecision.SyntheticBehavior(directive)
         else -> null
     }
@@ -66,6 +67,7 @@ class PromptDirectivePolicy : RoutingPolicy {
         var ttft = 0L
         var itl = 0L
         var total = 0L
+        var payload = ""
         for (pair in content.substring(bodyStart, end).split(PAIR_SEPARATOR)) {
             val sep = pair.indexOf(KEY_VALUE_SEPARATOR)
             if (sep < 0) continue
@@ -78,6 +80,8 @@ class PromptDirectivePolicy : RoutingPolicy {
                 KEY_TTFT -> ttft = value.toLongOrNull() ?: 0L
                 KEY_ITL -> itl = value.toLongOrNull() ?: 0L
                 KEY_TOTAL -> total = value.toLongOrNull() ?: 0L
+                // base64url(no-pad) recorded message for type=replay; kept verbatim.
+                KEY_PAYLOAD -> payload = value
             }
         }
         if (type.isEmpty()) return null
@@ -89,6 +93,7 @@ class PromptDirectivePolicy : RoutingPolicy {
             } else {
                 null
             },
+            replay = if (payload.isNotEmpty()) FakerDirectiveReplay(payload = payload) else null,
         )
     }
 
@@ -103,6 +108,7 @@ class PromptDirectivePolicy : RoutingPolicy {
         private const val KEY_TTFT = "ttft"
         private const val KEY_ITL = "itl"
         private const val KEY_TOTAL = "total"
+        private const val KEY_PAYLOAD = "payload"
 
         private const val TYPE_ERROR = "error"
         private const val TYPE_NORMAL = "normal"
@@ -110,6 +116,7 @@ class PromptDirectivePolicy : RoutingPolicy {
         private const val TYPE_TOOL_CALL = "tool_call"
         private const val TYPE_TIMEOUT = "timeout"
         private const val TYPE_EMPTY = "empty"
+        private const val TYPE_REPLAY = "replay"
 
         /** Status used for `type=error` when the marker omits `status` (faker-contract.md §2). */
         private const val DEFAULT_ERROR_STATUS = 400

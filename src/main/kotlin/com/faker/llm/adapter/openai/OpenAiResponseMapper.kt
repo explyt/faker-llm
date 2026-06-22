@@ -144,6 +144,10 @@ class OpenAiResponseMapper(
         val id = newCompletionId()
         val created = nowEpochSec()
         var aborted = false
+        // OpenAI keys tool calls by `index`; a client merges deltas sharing an index. Without a
+        // distinct index per call, multiple tool calls (e.g. a replayed multi-tool response)
+        // collapse into one garbled call. Increment on each ToolCallStart.
+        var toolIndex = -1
 
         fun writeDelta(delta: ChunkDelta) {
             writer.writeDataFrame(
@@ -162,20 +166,24 @@ class OpenAiResponseMapper(
                 is AbstractStreamEvent.StreamStart -> writeDelta(ChunkDelta(role = "assistant"))
                 is AbstractStreamEvent.TextChunk -> writeDelta(ChunkDelta(content = event.delta))
                 is AbstractStreamEvent.ThinkingChunk -> writeDelta(ChunkDelta(reasoning_content = event.delta))
-                is AbstractStreamEvent.ToolCallStart -> writeDelta(
-                    ChunkDelta(
-                        tool_calls = listOf(
-                            ToolCallDelta(
-                                id = event.callId,
-                                type = "function",
-                                function = FunctionDelta(name = event.toolName),
+                is AbstractStreamEvent.ToolCallStart -> {
+                    toolIndex++
+                    writeDelta(
+                        ChunkDelta(
+                            tool_calls = listOf(
+                                ToolCallDelta(
+                                    index = toolIndex,
+                                    id = event.callId,
+                                    type = "function",
+                                    function = FunctionDelta(name = event.toolName),
+                                ),
                             ),
                         ),
-                    ),
-                )
+                    )
+                }
                 is AbstractStreamEvent.ToolCallArgsChunk -> writeDelta(
                     ChunkDelta(
-                        tool_calls = listOf(ToolCallDelta(function = FunctionDelta(arguments = event.delta))),
+                        tool_calls = listOf(ToolCallDelta(index = toolIndex, function = FunctionDelta(arguments = event.delta))),
                     ),
                 )
                 is AbstractStreamEvent.ToolCallEnd -> Unit // OpenAI signals end via finish_reason

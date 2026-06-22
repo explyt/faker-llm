@@ -8,7 +8,11 @@ import com.faker.llm.domain.RequestContext
 import com.faker.llm.domain.ResponsePart
 import com.faker.llm.domain.SuccessEntry
 import com.faker.llm.domain.TimingProfile
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import java.util.Base64
 
 /**
  * Synthesizes a [SuccessEntry] from a [FakerDirective] for directive types that don't pick
@@ -48,8 +52,13 @@ object SyntheticEntryBuilder {
     private const val DEFAULT_THINKING_MIN_TOKENS = 20
     private const val DEFAULT_TOOL_NAME = "fake_tool"
 
-    /** Build a synthesized success entry for `normal` / `empty` / `thinking` / `tool_call`. */
+    /** Tolerant JSON for decoding the replay payload (older/newer clients may add fields). */
+    private val replayJson = Json { ignoreUnknownKeys = true }
+
+    /** Build a synthesized success entry for `normal` / `empty` / `thinking` / `tool_call` / `replay`. */
     fun buildEntry(directive: FakerDirective): SuccessEntry = when (directive.type) {
+        "replay" -> buildReplayEntry(directive)
+
         "empty" -> SuccessEntry(
             id = "synthetic-empty",
             weight = 1.0,
@@ -102,8 +111,49 @@ object SyntheticEntryBuilder {
     }
 
     /**
+     * Builds an entry that echoes a recorded assistant message (directive type `replay`). The
+     * base64url(no-pad) payload decodes to {content, tool_calls[].{name,arguments}, finish_reason};
+     * we emit the content as text and each tool call with its EXACT recorded name + arguments,
+     * terminating with the recorded (or derived) finish_reason. Pacing is ttft/itl; the size is
+     * the recorded content's, not duration-derived. This lets the client verify the chain
+     * preserved the response (chain-integrity check).
+     */
+    private fun buildReplayEntry(directive: FakerDirective): SuccessEntry {
+        val payload = directive.replay?.payload
+            ?: error("SyntheticEntryBuilder: replay directive has no payload")
+        val decoded = String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
+        val rec = replayJson.decodeFromString(ReplayMessage.serializer(), decoded)
+
+        val parts = buildList {
+            if (rec.content.isNotEmpty()) add(ResponsePart.Text(rec.content))
+            for (tc in rec.tool_calls) {
+                add(ResponsePart.ToolCall(argsTemplate = parseArgs(tc.arguments), toolName = tc.name))
+            }
+        }
+        val finish = if (rec.finish_reason == "tool_calls" || rec.tool_calls.isNotEmpty()) {
+            FinishReason.ToolCalls
+        } else {
+            FinishReason.Stop
+        }
+        return SuccessEntry(
+            id = "synthetic-replay",
+            weight = 1.0,
+            requiresTools = rec.tool_calls.isNotEmpty(),
+            parts = parts,
+            timing = timingFromDirective(directive),
+            finishReason = finish,
+        )
+    }
+
+    /** Parses a tool-call arguments JSON string into a JsonObject (empty object on failure). */
+    private fun parseArgs(arguments: String): JsonObject =
+        runCatching { replayJson.parseToJsonElement(arguments).jsonObject }
+            .getOrDefault(JsonObject(emptyMap()))
+
+    /**
      * For `tool_call` we must override [RequestContext.toolNames] so the engine's random
-     * tool-name pick yields the name from the directive. Other types pass-through.
+     * tool-name pick yields the name from the directive. Other types pass-through (replay
+     * carries the name on each part, so it needs no context override).
      */
     fun overrideContext(ctx: RequestContext, directive: FakerDirective): RequestContext {
         if (directive.type != "tool_call") return ctx
@@ -166,3 +216,21 @@ object SyntheticEntryBuilder {
         return raw.take(targetLength)
     }
 }
+
+/**
+ * Decoded `replay` payload: the recorded assistant message the client asks Faker to echo.
+ * Mirrors the client's profile.replayPayload schema (base64url(no-pad) JSON). Defaults make
+ * partial payloads (content-only or tool-only) decode cleanly.
+ */
+@Serializable
+private data class ReplayMessage(
+    val content: String = "",
+    val tool_calls: List<ReplayToolCall> = emptyList(),
+    val finish_reason: String = "",
+)
+
+@Serializable
+private data class ReplayToolCall(
+    val name: String = "",
+    val arguments: String = "",
+)

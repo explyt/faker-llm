@@ -24,15 +24,19 @@ sealed interface ResponsePart {
     data class Thinking(val content: String) : ResponsePart
 
     /**
-     * Tool call arguments template. The tool *name* is intentionally NOT stored here —
-     * the engine picks it at runtime from [RequestContext.toolNames]. Pool entries
-     * that carry [ToolCall] parts must set `requiresTools = true` so the selector
-     * filters them out for tool-less requests.
+     * Tool call arguments template. The tool *name* is normally NOT stored here — the
+     * engine picks it at runtime from [RequestContext.toolNames]. Pool entries that carry
+     * [ToolCall] parts must set `requiresTools = true` so the selector filters them out for
+     * tool-less requests.
+     *
+     * [toolName] is an explicit override used by the `replay` directive to echo the exact
+     * recorded tool call: when non-null the engine uses it verbatim instead of picking from
+     * the context (and the `requiresTools`/`toolNames` precondition does not apply).
      *
      * The template supports placeholders like `${random:int:1:100}` or
      * `${request:tool_name}`; resolution is implemented in the engine, not here.
      */
     @Serializable
     @SerialName("tool_call")
-    data class ToolCall(val argsTemplate: JsonObject) : ResponsePart
+    data class ToolCall(val argsTemplate: JsonObject, val toolName: String? = null) : ResponsePart
 }

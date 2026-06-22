@@ -22,6 +22,18 @@ data class FakerDirective(
     val thinking: FakerDirectiveThinking? = null,
     val tool_call: FakerDirectiveToolCall? = null,
     val timing: FakerDirectiveTiming? = null,
+    val replay: FakerDirectiveReplay? = null,
+)
+
+/**
+ * `replay` sub-object: carries the base64url(no-pad)-encoded recorded assistant message the
+ * load client asks Faker to echo verbatim (type `replay`). The decoded JSON has `content`,
+ * `tool_calls[].{name,arguments}` and `finish_reason`; [com.faker.llm.engine.SyntheticEntryBuilder]
+ * decodes [payload] and rebuilds the response so the client can verify chain integrity.
+ */
+@Serializable
+data class FakerDirectiveReplay(
+    val payload: String? = null,
 )
 
 /**
