@@ -73,8 +73,25 @@ case "$CMD" in
   smoke)
     PORT="${PORT:-8080}"
     BASE="http://127.0.0.1:$PORT"
-    echo "[docker.sh] health..."
-    curl -fsS "$BASE/healthz" || { echo "FAIL"; exit 1; }
+    # Wait for the app to come up before probing. `up` (re)creates the container and the JVM
+    # needs a few seconds to bind the port; a single immediate curl raced the cold start and
+    # failed the FIRST deploy (a rerun "passed" only because the unchanged image was not
+    # recreated, leaving the already-warm container in place). Poll until healthy.
+    echo "[docker.sh] waiting for /healthz (up to ${HEALTH_TIMEOUT:-60}s)..."
+    healthy=
+    for i in $(seq 1 "${HEALTH_TIMEOUT:-60}"); do
+      if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then
+        echo "[docker.sh] healthy after ${i}s"
+        healthy=1
+        break
+      fi
+      sleep 1
+    done
+    if [ -z "$healthy" ]; then
+      echo "[docker.sh] FAIL: /healthz not ready in ${HEALTH_TIMEOUT:-60}s. Recent container logs:"
+      "${COMPOSE[@]}" logs --tail=50 faker || true
+      exit 1
+    fi
     echo
     echo "[docker.sh] /v1/chat/completions non-streaming..."
     curl -fsS -X POST "$BASE/v1/chat/completions" \
