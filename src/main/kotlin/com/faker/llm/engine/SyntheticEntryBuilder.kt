@@ -137,8 +137,10 @@ object SyntheticEntryBuilder {
             if (rec.content.isNotEmpty()) add(ResponsePart.Text(rec.content))
             for (tc in rec.tool_calls) {
                 // rawArgs echoes the recorded arguments VERBATIM (exact bytes; supports
-                // non-object args). argsTemplate is unused then but the field is required.
-                add(ResponsePart.ToolCall(argsTemplate = EMPTY_ARGS, toolName = tc.name, rawArgs = tc.arguments))
+                // non-object args). argsTemplate is unused then but the field is required. An
+                // empty/blank recorded args becomes "{}" so the wire arguments stay valid JSON.
+                val rawArgs = tc.arguments.ifBlank { "{}" }
+                add(ResponsePart.ToolCall(argsTemplate = EMPTY_ARGS, toolName = tc.name, rawArgs = rawArgs))
             }
         }
         val finish = if (rec.finish_reason == "tool_calls" || rec.tool_calls.isNotEmpty()) {

@@ -217,7 +217,7 @@ private suspend fun handleSynthetic(
     mapper: AnthropicResponseMapper,
     engine: StreamingEngine,
     json: Json,
-    @Suppress("UNUSED_PARAMETER") requestId: String?,
+    requestId: String?,
     decision: RoutingDecision.SyntheticBehavior,
     ctx: RequestContext,
     model: String,
@@ -227,7 +227,14 @@ private suspend fun handleSynthetic(
         delay(Long.MAX_VALUE)
         return
     }
-    val entry = SyntheticEntryBuilder.buildEntry(decision.directive)
+    // A replay directive with a corrupted/undecodable payload throws IllegalArgumentException;
+    // answer 400 (transport mangled the marker), not a generic 500 — parity with OpenAiRoutes.
+    val entry = try {
+        SyntheticEntryBuilder.buildEntry(decision.directive)
+    } catch (e: IllegalArgumentException) {
+        respondInvalidRequest(call, mapper, json, requestId, e.message ?: "invalid replay payload")
+        return
+    }
     val effectiveCtx = SyntheticEntryBuilder.overrideContext(ctx, decision.directive)
     if (effectiveCtx.stream) {
         streamSuccess(call, mapper, engine, json, entry, effectiveCtx, model)

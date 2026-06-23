@@ -55,8 +55,9 @@ fun estimateForStreaming(entry: SuccessEntry): AppliedTiming {
         when (part) {
             is ResponsePart.Text -> part.content.length
             is ResponsePart.Thinking -> part.content.length
-            // Tool-call args JSON length is a good proxy for chunkable payload size.
-            is ResponsePart.ToolCall -> part.argsTemplate.toString().length
+            // Tool-call args JSON length is a good proxy for chunkable payload size. replay
+            // carries the real args in rawArgs (argsTemplate is then an empty placeholder).
+            is ResponsePart.ToolCall -> (part.rawArgs ?: part.argsTemplate.toString()).length
         }
     }
     val avgChunkSize = maxOf(
