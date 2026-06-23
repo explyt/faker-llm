@@ -204,7 +204,14 @@ private suspend fun handleSynthetic(
         delay(Long.MAX_VALUE)
         return
     }
-    val entry = SyntheticEntryBuilder.buildEntry(decision.directive)
+    // A replay directive with a corrupted/undecodable payload throws IllegalArgumentException;
+    // answer 400 (transport corrupted the marker) rather than letting it become a 500.
+    val entry = try {
+        SyntheticEntryBuilder.buildEntry(decision.directive)
+    } catch (e: IllegalArgumentException) {
+        respondInvalidRequest(call, mapper, reason = e.message ?: "invalid replay payload")
+        return
+    }
     val effectiveCtx = SyntheticEntryBuilder.overrideContext(ctx, decision.directive)
     if (effectiveCtx.stream) {
         streamSuccess(call, mapper, engine, entry, effectiveCtx, model)

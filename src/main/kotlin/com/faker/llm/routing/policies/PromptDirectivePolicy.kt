@@ -53,15 +53,25 @@ class PromptDirectivePolicy : RoutingPolicy {
     }
 
     /**
-     * Extracts the LAST in-band marker into a [FakerDirective], or `null` when absent / typeless.
-     * Inverse of the client's `DirectiveMarker`; see the class doc for the grammar.
+     * Extracts the LAST COMPLETE in-band marker into a [FakerDirective], or `null` when absent /
+     * typeless. Scans backwards for the last `[[faker:` that actually has a closing `]]`, so an
+     * unterminated trailing `[[faker:` does not shadow an earlier valid marker. Inverse of the
+     * client's `DirectiveMarker`; see the class doc. MUST stay 1:1 with LoadTesting ParseMarker.
      */
     private fun parseMarker(content: String): FakerDirective? {
-        val start = content.lastIndexOf(DIRECTIVE_PREFIX)
-        if (start < 0) return null
-        val bodyStart = start + DIRECTIVE_PREFIX.length
-        val end = content.indexOf(DIRECTIVE_SUFFIX, bodyStart)
-        if (end < 0) return null // unterminated marker — nothing valid can follow
+        var bodyStart = -1
+        var end = -1
+        var from = content.length
+        while (true) {
+            val start = content.lastIndexOf(DIRECTIVE_PREFIX, from - 1)
+            if (start < 0) return null
+            val bs = start + DIRECTIVE_PREFIX.length
+            val e = content.indexOf(DIRECTIVE_SUFFIX, bs)
+            if (e >= 0) {
+                bodyStart = bs; end = e; break
+            }
+            from = start // this prefix is unterminated — look before it
+        }
 
         var type = ""
         var status = 0
@@ -76,11 +86,12 @@ class PromptDirectivePolicy : RoutingPolicy {
             val value = pair.substring(sep + 1).trim()
             when (key) {
                 KEY_TYPE -> type = value
-                // Non-numeric → 0 (Atoi-equivalent), mirroring the client's tolerant parse.
-                KEY_STATUS -> status = value.toIntOrNull() ?: 0
-                KEY_TTFT -> ttft = value.toLongOrNull() ?: 0L
-                KEY_ITL -> itl = value.toLongOrNull() ?: 0L
-                KEY_TOTAL -> total = value.toLongOrNull() ?: 0L
+                // Non-numeric OR negative → 0 (Atoi-non-negative equivalent), mirroring the
+                // client's tolerant parse (LoadTesting atoiNonNeg clamps negatives to 0).
+                KEY_STATUS -> status = value.toIntOrNull()?.takeIf { it >= 0 } ?: 0
+                KEY_TTFT -> ttft = value.toLongOrNull()?.takeIf { it >= 0L } ?: 0L
+                KEY_ITL -> itl = value.toLongOrNull()?.takeIf { it >= 0L } ?: 0L
+                KEY_TOTAL -> total = value.toLongOrNull()?.takeIf { it >= 0L } ?: 0L
                 // base64url(no-pad) recorded message for type=replay; kept verbatim.
                 KEY_PAYLOAD -> payload = value
             }

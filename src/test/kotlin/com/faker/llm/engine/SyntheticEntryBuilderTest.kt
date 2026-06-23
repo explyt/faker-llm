@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class SyntheticEntryBuilderTest {
@@ -90,7 +91,10 @@ class SyntheticEntryBuilderTest {
         assertEquals(FinishReason.ToolCalls, entry.finishReason)
         assertTrue(entry.requiresTools)
         assertEquals("привет мир", entry.parts.filterIsInstance<ResponsePart.Text>().single().content)
-        assertEquals("read_file", entry.parts.filterIsInstance<ResponsePart.ToolCall>().single().toolName)
+        val tc = entry.parts.filterIsInstance<ResponsePart.ToolCall>().single()
+        assertEquals("read_file", tc.toolName)
+        // rawArgs carries the recorded arguments VERBATIM (byte-exact, no re-serialization).
+        assertEquals("""{"path":"a.go"}""", tc.rawArgs)
 
         // End-to-end: ctx has NO toolNames, so a successful tool call proves the engine uses the
         // part's explicit name (replay) rather than picking from the context.
@@ -100,6 +104,24 @@ class SyntheticEntryBuilderTest {
         val args = events.filterIsInstance<AbstractStreamEvent.ToolCallArgsChunk>().joinToString("") { it.delta }
         assertTrue(args.contains("a.go"), "echoed args must carry the recorded value, got $args")
         assertEquals("привет мир", events.filterIsInstance<AbstractStreamEvent.TextChunk>().joinToString("") { it.delta })
+    }
+
+    @Test
+    fun `replay with undecodable payload throws IllegalArgumentException (route maps to 400)`() {
+        val bad = FakerDirective(type = "replay", replay = FakerDirectiveReplay(payload = "!!!not-base64!!!"))
+        assertFailsWith<IllegalArgumentException> { SyntheticEntryBuilder.buildEntry(bad) }
+    }
+
+    @Test
+    fun `replay echoes non-object tool arguments verbatim via rawArgs`() {
+        // Real OpenAI args are objects, but rawArgs must round-trip ANY recorded string
+        // (array/scalar) exactly — never normalize to {}.
+        val payloadJson = """{"content":"","tool_calls":[{"name":"t","arguments":"[1,2,3]"}],"finish_reason":"tool_calls"}"""
+        val b64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadJson.toByteArray(Charsets.UTF_8))
+        val entry = SyntheticEntryBuilder.buildEntry(
+            FakerDirective(type = "replay", replay = FakerDirectiveReplay(payload = b64)),
+        )
+        assertEquals("[1,2,3]", entry.parts.filterIsInstance<ResponsePart.ToolCall>().single().rawArgs)
     }
 
     @Test

@@ -11,7 +11,6 @@ import com.faker.llm.domain.TimingProfile
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import java.util.Base64
 
 /**
@@ -54,6 +53,9 @@ object SyntheticEntryBuilder {
 
     /** Tolerant JSON for decoding the replay payload (older/newer clients may add fields). */
     private val replayJson = Json { ignoreUnknownKeys = true }
+
+    /** Placeholder argsTemplate for replay tool calls — the real args ride in ResponsePart.rawArgs. */
+    private val EMPTY_ARGS = JsonObject(emptyMap())
 
     /** Build a synthesized success entry for `normal` / `empty` / `thinking` / `tool_call` / `replay`. */
     fun buildEntry(directive: FakerDirective): SuccessEntry = when (directive.type) {
@@ -120,14 +122,23 @@ object SyntheticEntryBuilder {
      */
     private fun buildReplayEntry(directive: FakerDirective): SuccessEntry {
         val payload = directive.replay?.payload
-            ?: error("SyntheticEntryBuilder: replay directive has no payload")
-        val decoded = String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
-        val rec = replayJson.decodeFromString(ReplayMessage.serializer(), decoded)
+            ?: throw IllegalArgumentException("replay: directive has no payload")
+        val rec = try {
+            val decoded = String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
+            replayJson.decodeFromString(ReplayMessage.serializer(), decoded)
+        } catch (e: Exception) {
+            // Corrupted/undecodable payload (e.g. the tract mangled the in-band marker in
+            // transit). Raise IllegalArgumentException so the route surfaces a clean 400 instead
+            // of a generic 500 — making "chain corrupted the payload" attributable, not a faker fault.
+            throw IllegalArgumentException("replay: undecodable payload: ${e.message}", e)
+        }
 
         val parts = buildList {
             if (rec.content.isNotEmpty()) add(ResponsePart.Text(rec.content))
             for (tc in rec.tool_calls) {
-                add(ResponsePart.ToolCall(argsTemplate = parseArgs(tc.arguments), toolName = tc.name))
+                // rawArgs echoes the recorded arguments VERBATIM (exact bytes; supports
+                // non-object args). argsTemplate is unused then but the field is required.
+                add(ResponsePart.ToolCall(argsTemplate = EMPTY_ARGS, toolName = tc.name, rawArgs = tc.arguments))
             }
         }
         val finish = if (rec.finish_reason == "tool_calls" || rec.tool_calls.isNotEmpty()) {
@@ -144,11 +155,6 @@ object SyntheticEntryBuilder {
             finishReason = finish,
         )
     }
-
-    /** Parses a tool-call arguments JSON string into a JsonObject (empty object on failure). */
-    private fun parseArgs(arguments: String): JsonObject =
-        runCatching { replayJson.parseToJsonElement(arguments).jsonObject }
-            .getOrDefault(JsonObject(emptyMap()))
 
     /**
      * For `tool_call` we must override [RequestContext.toolNames] so the engine's random

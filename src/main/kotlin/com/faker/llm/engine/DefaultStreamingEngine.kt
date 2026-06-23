@@ -162,8 +162,9 @@ class DefaultStreamingEngine(
         if (chunksSoFar() > 0) delay(timing.interChunkMs.randomIn(random))
         emit(AbstractStreamEvent.ToolCallStart(toolName, callId))
 
-        // JsonObject.toString() is compact JSON by kotlinx.serialization contract — no PoolJson coupling.
-        val argsJson = part.argsTemplate.toString()
+        // replay: emit the recorded arguments verbatim (exact bytes, supports non-object args);
+        // otherwise the JsonObject template, compact JSON by kotlinx.serialization contract.
+        val argsJson = part.rawArgs ?: part.argsTemplate.toString()
         val chunkRange = timing.chunkSizeChars.let { it.min..it.max }
         for (delta in argsJson.chunkByRange(chunkRange, random)) {
             // Pace args chunks even from #0: they follow ToolCallStart, which is NOT counted in

@@ -33,10 +33,18 @@ sealed interface ResponsePart {
      * recorded tool call: when non-null the engine uses it verbatim instead of picking from
      * the context (and the `requiresTools`/`toolNames` precondition does not apply).
      *
+     * [rawArgs], when non-null (replay), is the recorded arguments string emitted VERBATIM —
+     * bypassing [argsTemplate] re-serialization. This preserves the exact recorded bytes and
+     * supports non-object arguments (array/scalar) that would not fit a JsonObject template.
+     *
      * The template supports placeholders like `${random:int:1:100}` or
      * `${request:tool_name}`; resolution is implemented in the engine, not here.
      */
     @Serializable
     @SerialName("tool_call")
-    data class ToolCall(val argsTemplate: JsonObject, val toolName: String? = null) : ResponsePart
+    data class ToolCall(
+        val argsTemplate: JsonObject,
+        val toolName: String? = null,
+        val rawArgs: String? = null,
+    ) : ResponsePart
 }

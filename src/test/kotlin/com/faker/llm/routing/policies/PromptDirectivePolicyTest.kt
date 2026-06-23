@@ -143,6 +143,24 @@ class PromptDirectivePolicyTest {
     }
 
     @Test
+    fun `unterminated trailing marker does not shadow an earlier complete one`() {
+        // Last COMPLETE marker wins: an unterminated trailing [[faker: must not discard the
+        // earlier valid directive (parity with the client ParseMarker).
+        val decision = decide("[[faker:type=normal;ttft=10;itl=2;total=100]] stray [[faker:type=error")
+        assertTrue(decision is RoutingDecision.SyntheticBehavior && decision.directive.type == "normal")
+    }
+
+    @Test
+    fun `negative numeric values clamp to zero (parity with client atoiNonNeg)`() {
+        val decision = decide("[[faker:type=normal;ttft=-5;itl=-1;total=-9]]")
+        assertTrue(decision is RoutingDecision.SyntheticBehavior)
+        // all timings clamped to 0 → no timing object at all.
+        assertNull(decision.directive.timing)
+        // negative status clamps to 0 → treated as unset → default 400.
+        assertEquals(RoutingDecision.SyntheticHttpError(400), decide("[[faker:type=error;status=-503]]"))
+    }
+
+    @Test
     fun `unterminated marker returns null`() {
         assertNull(decide("prefix [[faker:type=normal;ttft=200 no closing bracket"))
     }
