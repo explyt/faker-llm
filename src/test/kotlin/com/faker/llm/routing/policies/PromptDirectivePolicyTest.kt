@@ -135,10 +135,11 @@ class PromptDirectivePolicyTest {
     }
 
     @Test
-    fun `first marker wins when several are present`() {
-        // The first [[faker:...]] span is the directive; the later one is ignored entirely.
+    fun `last marker wins when several are present`() {
+        // The LAST [[faker:...]] span is the directive (a freshly typed directive overrides a
+        // stale earlier one); the earlier one is ignored entirely.
         val decision = decide("[[faker:type=error;status=503]] ... [[faker:type=normal;ttft=200;itl=20;total=2200]]")
-        assertEquals(RoutingDecision.SyntheticHttpError(503), decision)
+        assertTrue(decision is RoutingDecision.SyntheticBehavior && decision.directive.type == "normal")
     }
 
     @Test

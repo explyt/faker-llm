@@ -20,7 +20,8 @@ import com.faker.llm.routing.RoutingPolicy
  *
  * Grammar mirrors the client reference `DirectiveMarker`/`ParseMarker` 1-for-1 so the round-trip
  * is exact (LoadTesting `internal/faker/marker.go`):
- *  - the FIRST `[[faker:` … `]]` span wins; later markers are ignored;
+ *  - the LAST `[[faker:` … `]]` span wins; earlier markers are ignored (so a freshly typed
+ *    directive in the latest user turn overrides a stale one left earlier in the conversation);
  *  - pairs are separated by `;`, key and value by the first `=`;
  *  - keys are case-insensitive and trimmed; unknown keys are ignored;
  *  - a non-numeric value parses to `0`;
@@ -52,11 +53,11 @@ class PromptDirectivePolicy : RoutingPolicy {
     }
 
     /**
-     * Extracts the first in-band marker into a [FakerDirective], or `null` when absent / typeless.
+     * Extracts the LAST in-band marker into a [FakerDirective], or `null` when absent / typeless.
      * Inverse of the client's `DirectiveMarker`; see the class doc for the grammar.
      */
     private fun parseMarker(content: String): FakerDirective? {
-        val start = content.indexOf(DIRECTIVE_PREFIX)
+        val start = content.lastIndexOf(DIRECTIVE_PREFIX)
         if (start < 0) return null
         val bodyStart = start + DIRECTIVE_PREFIX.length
         val end = content.indexOf(DIRECTIVE_SUFFIX, bodyStart)
