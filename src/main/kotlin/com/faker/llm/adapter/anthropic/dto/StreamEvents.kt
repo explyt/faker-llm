@@ -19,8 +19,6 @@ import kotlinx.serialization.Serializable
 data class MessageStartEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "message_start",
     val message: MessageShell,
-    /** Wall-clock ms since the previous emitted event; for `message_start` this equals TTFT. */
-    val faker_elapsed_ms: Long,
 )
 
 /**
@@ -53,8 +51,6 @@ data class ContentBlockStartEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "content_block_start",
     val index: Int,
     val content_block: AnthropicContentBlock,
-    /** Wall-clock ms since the previous emitted event. */
-    val faker_elapsed_ms: Long,
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -63,8 +59,6 @@ data class ContentBlockDeltaEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "content_block_delta",
     val index: Int,
     val delta: ContentBlockDelta,
-    /** Wall-clock ms since the previous emitted event. */
-    val faker_elapsed_ms: Long,
 )
 
 /**
@@ -93,8 +87,6 @@ sealed interface ContentBlockDelta {
 data class ContentBlockStopEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "content_block_stop",
     val index: Int,
-    /** Wall-clock ms since the previous emitted event. */
-    val faker_elapsed_ms: Long,
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -103,8 +95,6 @@ data class MessageDeltaEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "message_delta",
     val delta: MessageDeltaPayload,
     val usage: MessageDeltaUsage,
-    /** Wall-clock ms since the previous emitted event. */
-    val faker_elapsed_ms: Long,
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -122,6 +112,4 @@ data class MessageDeltaUsage(val output_tokens: Int)
 @Serializable
 data class MessageStopEvent(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "message_stop",
-    /** Wall-clock ms since the previous emitted event. */
-    val faker_elapsed_ms: Long,
 )

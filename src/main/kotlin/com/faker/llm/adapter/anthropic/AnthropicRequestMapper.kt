@@ -20,7 +20,7 @@ import kotlinx.serialization.json.contentOrNull
  */
 object AnthropicRequestMapper {
 
-    fun toContext(request: MessagesRequest, directiveHeader: String? = null): RequestContext {
+    fun toContext(request: MessagesRequest): RequestContext {
         val toolNames = request.tools.orEmpty().map { it.name }
 
         val parts = mutableListOf<String>()
@@ -36,7 +36,8 @@ object AnthropicRequestMapper {
             stream = request.stream,
             model = request.model,
             inspectableContent = parts.joinToString("\n").ifEmpty { null },
-            directiveHeader = directiveHeader,
+            // Directive comes from the in-band marker (PromptDirectivePolicy), not a header —
+            // parity with the OpenAI adapter; RequestContext.directiveHeader stays null.
         )
     }
 

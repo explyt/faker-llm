@@ -12,7 +12,6 @@ import com.faker.llm.pool.PoolLoader
 import com.faker.llm.pool.PoolSelector
 import com.faker.llm.routing.CompositeRequestRouter
 import com.faker.llm.routing.RequestRouter
-import com.faker.llm.routing.policies.HeaderDirectivePolicy
 import com.faker.llm.routing.policies.PromptDirectivePolicy
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -56,20 +55,14 @@ fun Application.module() {
         ?: PoolLoader.DEFAULT_DIRECTORY
     val poolEntries = PoolLoader().load(poolDir)
     val poolSelector = PoolSelector(poolEntries)
-    // FAKER_REQUEST_ID_HEADER lets ops override the header name we read AND echo (per
-    // faker-contract.md). Default "X-Request-Id" matches the contract default.
-    val requestIdHeader = System.getenv("FAKER_REQUEST_ID_HEADER")?.takeIf { it.isNotBlank() }
-        ?: "X-Request-Id"
     // This faker serves exactly one model id; ops can override it without a rebuild. The same id
     // gates /v1/chat/completions (404 for anything else) and is advertised by /v1/models.
     val modelId = System.getenv("FAKER_MODEL_ID")?.takeIf { it.isNotBlank() } ?: FAKER_MODEL_ID
-    // Policy order matters (first non-null decision wins):
-    //  1. HeaderDirectivePolicy — legacy X-Faker-Directive header (Anthropic surface).
-    //  2. PromptDirectivePolicy — the in-band [[faker:...]] marker in the message text. This is the
-    //     ONLY directive channel for OpenAI: the license tract strips the body & headers, so the
-    //     OpenAI adapter never sets a header directive and this policy always handles it.
+    // The directive rides in-band as the [[faker:...]] marker in the message text — the ONLY
+    // channel that survives the license tract (which strips the body & headers). Both adapters
+    // (OpenAI and Anthropic) read it via PromptDirectivePolicy from inspectableContent.
     val router: RequestRouter = CompositeRequestRouter(
-        listOf(HeaderDirectivePolicy(), PromptDirectivePolicy()),
+        listOf(PromptDirectivePolicy()),
     )
     val streamingEngine: StreamingEngine = DefaultStreamingEngine()
 
@@ -94,7 +87,7 @@ fun Application.module() {
         disableDefaultColors()
     }
     install(StatusPages) {
-        installFakerErrorHandling(ktorJson, requestIdHeader)
+        installFakerErrorHandling(ktorJson)
     }
 
     routing {
@@ -104,8 +97,9 @@ fun Application.module() {
         // OpenAI: one-directional in-band contract — directive in the message text, clean response.
         // Validates the model: only `modelId` is served, anything else → 404 model_not_found.
         openAiRoutes(poolSelector, router, streamingEngine, modelId)
-        // Anthropic still uses the legacy header transport pending its own migration.
-        anthropicRoutes(poolSelector, router, streamingEngine, requestIdHeader)
+        // Anthropic: same one-directional in-band contract — directive in the message text,
+        // clean Anthropic response (no request_id / faker_elapsed_ms echo).
+        anthropicRoutes(poolSelector, router, streamingEngine)
     }
 
     moduleLogger.info("Faker LLM starting: {} pool entries loaded from '{}'", poolEntries.size, poolDir)

@@ -14,10 +14,6 @@ import kotlinx.serialization.Serializable
 data class AnthropicErrorEnvelope(
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val type: String = "error",
     val error: AnthropicErrorBody,
-    /** Total wall-clock ms spent inside the faker before this error envelope was written. */
-    val faker_elapsed_ms: Long,
-    /** Echo of the client-supplied request id header. Omitted when null (encodeDefaults=false). */
-    val request_id: String? = null,
 )
 
 @Serializable

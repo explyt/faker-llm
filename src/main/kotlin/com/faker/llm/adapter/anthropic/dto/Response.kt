@@ -23,8 +23,6 @@ data class MessagesResponse(
     val stop_reason: String,
     @EncodeDefault(EncodeDefault.Mode.ALWAYS) val stop_sequence: String? = null,
     val usage: AnthropicUsage,
-    /** Total wall-clock ms spent inside the faker (from request received to response built). */
-    val faker_elapsed_ms: Long,
 )
 
 /**

@@ -16,8 +16,6 @@ import com.faker.llm.adapter.anthropic.dto.MessageStartEvent
 import com.faker.llm.adapter.anthropic.dto.MessageStartUsage
 import com.faker.llm.adapter.anthropic.dto.MessageStopEvent
 import com.faker.llm.adapter.anthropic.dto.MessagesResponse
-import com.faker.llm.app.EmitTimer
-import com.faker.llm.app.elapsedMsSince
 import com.faker.llm.domain.AbstractStreamEvent
 import com.faker.llm.domain.FinishReason
 import com.faker.llm.domain.MidStreamErrorKind
@@ -40,9 +38,10 @@ import kotlin.random.Random
  * event type changes. Multi-block payloads (e.g. thinking followed by text) are encoded
  * as separate `content_block_*` runs, each with its own index.
  *
- * Every emitted event carries `faker_elapsed_ms`: for `message_start` this is the effective
- * TTFT measured from the request anchor; for subsequent events it is the wall-clock delta
- * from the previously written event. Non-streaming responses report total elapsed.
+ * The response is CLEAN Anthropic with no faker echo (no `faker_elapsed_ms`, no `request_id`):
+ * the contract is one-directional and the license tract strips any body extension anyway
+ * (faker-contract.md §7), matching the OpenAI adapter. The directive rides in-band in the
+ * message text and the client derives gateway overhead from the timing it requested.
  */
 class AnthropicResponseMapper(
     private val random: Random = Random.Default,
@@ -57,7 +56,6 @@ class AnthropicResponseMapper(
         events: Flow<AbstractStreamEvent>,
         ctx: RequestContext,
         model: String,
-        requestStartNanos: Long,
     ): MessagesResponse {
         val collected = events.toList()
 
@@ -129,23 +127,18 @@ class AnthropicResponseMapper(
                 input_tokens = usage.promptChars / 4,
                 output_tokens = usage.completionChars / 4,
             ),
-            faker_elapsed_ms = elapsedMsSince(requestStartNanos),
         )
     }
 
-    /** Builds an error envelope JSON with `faker_elapsed_ms` from the request anchor. */
+    /** Builds a clean Anthropic error envelope JSON (no faker echo, per faker-contract.md §7). */
     fun buildErrorEnvelope(
         type: String,
         message: String,
-        requestStartNanos: Long,
-        requestId: String? = null,
     ): String =
         json.encodeToString(
             AnthropicErrorEnvelope.serializer(),
             AnthropicErrorEnvelope(
                 error = AnthropicErrorBody(type = type, message = message),
-                faker_elapsed_ms = elapsedMsSince(requestStartNanos),
-                request_id = requestId,
             ),
         )
 
@@ -156,12 +149,10 @@ class AnthropicResponseMapper(
         ctx: RequestContext,
         model: String,
         writer: Writer,
-        requestStartNanos: Long,
     ) {
         val state = StreamState(
             model = model,
             inputTokens = (ctx.inspectableContent?.length ?: 0) / 4,
-            timer = EmitTimer(requestStartNanos),
         )
         var aborted = false
 
@@ -189,11 +180,11 @@ class AnthropicResponseMapper(
                 }
                 is AbstractStreamEvent.ToolCallEnd -> closeOpenBlock(writer, state)
                 is AbstractStreamEvent.StreamError -> {
-                    // Per Task 06 contract: a mid-stream error means a torn stream — we do NOT
-                    // emit terminators (no content_block_stop, no message_delta/stop).
+                    // A mid-stream error means a torn stream — we do NOT emit terminators
+                    // (no content_block_stop, no message_delta/stop).
                     when (event.kind) {
                         MidStreamErrorKind.AbruptDisconnect -> Unit
-                        MidStreamErrorKind.ErrorEvent -> writer.writeErrorEvent(state, event.body.type, event.body.message)
+                        MidStreamErrorKind.ErrorEvent -> writer.writeErrorEvent(event.body.type, event.body.message)
                         MidStreamErrorKind.MalformedJson -> {
                             writer.write("data: {\n\n"); writer.flush()
                         }
@@ -204,7 +195,7 @@ class AnthropicResponseMapper(
                     closeOpenBlock(writer, state)
                     val outputTokens = event.usage.completionChars / 4
                     writer.writeMessageDelta(state, mapStopReason(event.finishReason), outputTokens)
-                    writer.writeMessageStop(state)
+                    writer.writeMessageStop()
                 }
             }
         }
@@ -221,7 +212,7 @@ class AnthropicResponseMapper(
             writer.writeAnthropicEvent(
                 "content_block_stop",
                 ContentBlockStopEvent.serializer(),
-                ContentBlockStopEvent(index = state.currentIndex, faker_elapsed_ms = state.timer.nextElapsedMs()),
+                ContentBlockStopEvent(index = state.currentIndex),
             )
             state.openType = null
             state.openCallId = null
@@ -236,7 +227,6 @@ class AnthropicResponseMapper(
     private inner class StreamState(
         val model: String,
         val inputTokens: Int,
-        val timer: EmitTimer,
     ) {
         val id: String = newMessageId()
         var currentIndex: Int = -1
@@ -258,7 +248,6 @@ class AnthropicResponseMapper(
                 ContentBlockStartEvent(
                     index = currentIndex,
                     content_block = block,
-                    faker_elapsed_ms = timer.nextElapsedMs(),
                 ),
             )
         }
@@ -277,7 +266,6 @@ class AnthropicResponseMapper(
                         name = name,
                         input = JsonObject(emptyMap()),
                     ),
-                    faker_elapsed_ms = timer.nextElapsedMs(),
                 ),
             )
         }
@@ -295,7 +283,6 @@ class AnthropicResponseMapper(
                     model = state.model,
                     usage = MessageStartUsage(input_tokens = state.inputTokens),
                 ),
-                faker_elapsed_ms = state.timer.nextElapsedMs(),
             ),
         )
     }
@@ -307,7 +294,6 @@ class AnthropicResponseMapper(
             ContentBlockDeltaEvent(
                 index = state.currentIndex,
                 delta = delta,
-                faker_elapsed_ms = state.timer.nextElapsedMs(),
             ),
         )
     }
@@ -319,26 +305,24 @@ class AnthropicResponseMapper(
             MessageDeltaEvent(
                 delta = MessageDeltaPayload(stop_reason = stopReason),
                 usage = MessageDeltaUsage(output_tokens = outputTokens),
-                faker_elapsed_ms = state.timer.nextElapsedMs(),
             ),
         )
     }
 
-    private fun Writer.writeMessageStop(state: StreamState) {
+    private fun Writer.writeMessageStop() {
         writeAnthropicEvent(
             "message_stop",
             MessageStopEvent.serializer(),
-            MessageStopEvent(faker_elapsed_ms = state.timer.nextElapsedMs()),
+            MessageStopEvent(),
         )
     }
 
-    private fun Writer.writeErrorEvent(state: StreamState, type: String, message: String) {
+    private fun Writer.writeErrorEvent(type: String, message: String) {
         writeAnthropicEvent(
             "error",
             AnthropicErrorEnvelope.serializer(),
             AnthropicErrorEnvelope(
                 error = AnthropicErrorBody(type = type, message = message),
-                faker_elapsed_ms = state.timer.nextElapsedMs(),
             ),
         )
     }
