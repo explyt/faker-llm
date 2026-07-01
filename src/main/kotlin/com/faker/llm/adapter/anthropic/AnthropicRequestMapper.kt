@@ -37,7 +37,7 @@ object AnthropicRequestMapper {
             model = request.model,
             inspectableContent = parts.joinToString("\n").ifEmpty { null },
             // Directive comes from the in-band marker (PromptDirectivePolicy), not a header —
-            // parity with the OpenAI adapter; RequestContext.directiveHeader stays null.
+            // parity with the OpenAI adapter.
         )
     }
 

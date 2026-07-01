@@ -24,7 +24,7 @@ sealed interface RoutingDecision {
     /**
      * Short-circuits the pipeline: route handlers must respond with an HTTP error built from
      * [status] WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by
-     * `HeaderDirectivePolicy` from the `X-Faker-Directive` header.
+     * `PromptDirectivePolicy` from the in-band `[[faker:...]]` directive marker.
      *
      * Per v2 of the contract the directive only carries `error.http_status` — the
      * `error.code`/`error.message` / Anthropic `error.type` text is chosen by the faker
@@ -36,8 +36,8 @@ sealed interface RoutingDecision {
 
     /**
      * Short-circuits the pool: route handlers must SYNTHESIZE the response from [directive]
-     * WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by `HeaderDirectivePolicy`
-     * for `normal` / `thinking` / `tool_call` / `timeout` / `empty` directive types.
+     * WITHOUT calling [com.faker.llm.pool.PoolSelector]. Produced by `PromptDirectivePolicy`
+     * for `normal` / `thinking` / `tool_call` / `timeout` / `empty` / `replay` directive types.
      *
      * The actual response shape is built by `SyntheticEntryBuilder` in the engine package.
      * Selector must NOT see this decision — reaching the selector with it is a wiring bug

@@ -3,7 +3,7 @@ package com.faker.llm.domain
 import kotlinx.serialization.Serializable
 
 /**
- * Parsed shape of the `X-Faker-Directive` JSON header, as defined in `faker-contract 2.md`.
+ * Parsed shape of the in-band `[[faker:...]]` directive marker, as defined in `faker-contract 2.md`.
  *
  * The contract is a discriminated ADT: the [type] picks the variant and only that variant's
  * sub-object is expected to be populated. Supported values: `normal`, `thinking`, `tool_call`,

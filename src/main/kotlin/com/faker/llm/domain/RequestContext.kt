@@ -14,13 +14,9 @@ package com.faker.llm.domain
  * @param stream whether the client asked for a streaming response
  * @param model the requested model identifier, if present
  * @param inspectableContent concatenated user/system text content used by
- *   [com.faker.llm.routing] to scan for `[[faker:...]]` directives. `null` when
+ *   [com.faker.llm.routing] to scan for the in-band `[[faker:...]]` directive marker
+ *   (parsed by [com.faker.llm.routing.policies.PromptDirectivePolicy]). `null` when
  *   the endpoint has no inspectable text (e.g. structured-only requests).
- * @param directiveHeader raw value of the legacy `X-Faker-Directive` HTTP header (JSON payload),
- *   if the client sent one. Consumed by
- *   [com.faker.llm.routing.policies.HeaderDirectivePolicy] (Anthropic adapter). `null` when the
- *   header is absent. The OpenAI surface carries its directive in-band in [inspectableContent]
- *   instead (parsed by [com.faker.llm.routing.policies.PromptDirectivePolicy]).
  */
 data class RequestContext(
     val hasTools: Boolean,
@@ -28,5 +24,4 @@ data class RequestContext(
     val stream: Boolean,
     val model: String?,
     val inspectableContent: String?,
-    val directiveHeader: String? = null,
 )
